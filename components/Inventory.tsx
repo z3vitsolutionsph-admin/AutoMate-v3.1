@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon, CheckSquare, Square, Layers, Edit3, Save, ShoppingCart } from 'lucide-react';
+import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon, CheckSquare, Square, Layers, Edit3, Save, ShoppingCart, Filter, Upload, Link as LinkIcon, RefreshCw, ChevronDown } from 'lucide-react';
 import { Product, Supplier, Transaction, ReorderSuggestion } from '../types';
 import { formatCurrency } from '../constants';
 import { enhanceProductDetails, analyzeStockLevels } from '../services/geminiService';
@@ -15,8 +15,10 @@ interface InventoryProps {
   transactions: Transaction[];
 }
 
-// Utility: URL Validator
+// Utility: URL Validator (Enhanced to support Data URIs)
 const isValidUrl = (urlString: string): boolean => {
+  if (!urlString) return false;
+  if (urlString.startsWith('data:image/')) return true; // Accept Data URIs from uploads
   try {
     const url = new URL(urlString);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -25,10 +27,65 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
+// Helper Component for Robust Images
+const ProductThumbnail: React.FC<{ src?: string, alt: string, size?: string, onError?: () => void }> = ({ src, alt, size = "w-12 h-12", onError }) => {
+  const [hasError, setHasError] = useState(false);
+  
+  useEffect(() => { setHasError(false); }, [src]);
+
+  if (!src || hasError) {
+    return (
+      <div className={`${size} rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 shadow-lg`}>
+        <Package size={20} className="text-zinc-700" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${size} rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 shadow-lg`}>
+      <img 
+        src={src} 
+        alt={alt} 
+        className="w-full h-full object-cover"
+        onError={() => {
+            setHasError(true);
+            if (onError) onError();
+        }}
+      />
+    </div>
+  );
+};
+
+// Audio Context for Beep Sound
+const playBeep = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046.50, ctx.currentTime); // C6 - Slightly higher pitch for inventory
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.error('Audio beep failed', e);
+  }
+};
+
 export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, setSuppliers, transactions }) => {
   const [activeTab, setActiveTab] = useState<'products' | 'suppliers'>('products');
   
   const [isAdding, setIsAdding] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -54,6 +111,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkStockModal, setShowBulkStockModal] = useState(false);
   const [bulkStockValue, setBulkStockValue] = useState<string>('');
+  const [bulkUpdateMode, setBulkUpdateMode] = useState<'set' | 'adjust'>('set');
+
+  // Filter State
+  const [showFilters, setShowFilters] = useState(false);
+  const [stockFilterType, setStockFilterType] = useState<'all' | 'below' | 'above' | 'range'>('all');
+  const [stockThreshold, setStockThreshold] = useState<string>('10');
+  const [stockRange, setStockRange] = useState({ min: '0', max: '50' });
+  const [filterCategory, setFilterCategory] = useState<string>('All');
 
   // Validation State
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -72,16 +137,33 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Proactive Alert Check
   const lowStockCount = products.filter(p => p.stock < 10).length;
 
   // Filtered Lists
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = 
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesCategory = filterCategory === 'All' || p.category === filterCategory;
+
+    let matchesStock = true;
+    if (stockFilterType === 'below') {
+       matchesStock = p.stock < (parseInt(stockThreshold) || 0);
+    } else if (stockFilterType === 'above') {
+       matchesStock = p.stock > (parseInt(stockThreshold) || 0);
+    } else if (stockFilterType === 'range') {
+       const min = parseInt(stockRange.min) || 0;
+       const max = parseInt(stockRange.max) || Infinity;
+       matchesStock = p.stock >= min && p.stock <= max;
+    }
+
+    return matchesSearch && matchesStock && matchesCategory;
+  });
 
   const filteredSuppliers = suppliers.filter(s => 
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -90,10 +172,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   // Auto-generate SKU
   useEffect(() => {
-    if (isAdding && !newSku) {
+    if (isAdding && !newSku && !editingProduct) {
       setNewSku(`SKU-${Math.floor(Math.random() * 10000)}`);
     }
-  }, [isAdding]);
+  }, [isAdding, editingProduct]);
 
   // Clear toasts
   useEffect(() => {
@@ -139,23 +221,36 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   const handleBulkStockUpdate = (e: React.FormEvent) => {
     e.preventDefault();
-    const qty = parseInt(bulkStockValue);
-    if (isNaN(qty) || qty < 0) {
-      setGeneralError("Please enter a valid non-negative stock quantity.");
+    const value = parseInt(bulkStockValue);
+    
+    if (isNaN(value)) {
+      setGeneralError("Please enter a valid number.");
       return;
+    }
+
+    if (bulkUpdateMode === 'set' && value < 0) {
+       setGeneralError("Stock cannot be negative.");
+       return;
     }
 
     setProducts(prev => prev.map(p => {
       if (selectedIds.has(p.id)) {
-        return { ...p, stock: qty };
+        let newStock = p.stock;
+        if (bulkUpdateMode === 'set') {
+            newStock = value;
+        } else {
+            newStock = Math.max(0, p.stock + value);
+        }
+        return { ...p, stock: newStock };
       }
       return p;
     }));
     
     setShowBulkStockModal(false);
     setBulkStockValue('');
+    setBulkUpdateMode('set');
     setSelectedIds(new Set());
-    setScanSuccess('Stock updated for selected items.');
+    setScanSuccess(`Stock ${bulkUpdateMode === 'set' ? 'updated' : 'adjusted'} for selected items.`);
   };
 
   const handleSmartEnhance = async () => {
@@ -207,6 +302,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
               videoRef.current, 
               (result, err) => {
                 if (result) {
+                  playBeep();
                   const text = result.getText();
                   setNewSku(text);
                   setScanSuccess(text);
@@ -234,6 +330,25 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setIsScanning(false);
   };
 
+  // Image Upload Handler
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        setGeneralError("File size too large (max 5MB)");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewImageUrl(reader.result as string);
+        setErrors(prev => ({ ...prev, image: '' }));
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset input value to allow re-uploading the same file if needed
+    e.target.value = '';
+  };
+
   const validateProductForm = () => {
     const newErrors: Record<string, string> = {};
     if (!newName.trim()) newErrors.name = 'Product name is required';
@@ -255,20 +370,34 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     // SKU Validation
     if (!newSku.trim()) {
        newErrors.sku = 'SKU is required';
-    } else if (products.some(p => p.sku.toLowerCase() === newSku.toLowerCase())) {
+    } else if (products.some(p => p.sku.toLowerCase() === newSku.toLowerCase() && p.id !== editingProduct?.id)) {
        newErrors.sku = 'SKU already exists';
     }
 
     if (!newCategory) newErrors.category = 'Category is required';
     if (!newSupplier) newErrors.supplier = 'Supplier is required';
     
-    // Image URL validation
+    // Image URL validation (now supports data URIs)
     if (newImageUrl && !isValidUrl(newImageUrl)) {
-      newErrors.image = 'Invalid URL format (must be http/https)';
+      newErrors.image = 'Invalid Image URL or Corrupt Data';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const openEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setNewName(p.name);
+    setNewDesc(p.description || '');
+    setNewPrice(p.price.toString());
+    setNewStock(p.stock.toString());
+    setNewCategory(p.category);
+    setNewSupplier(p.supplier || '');
+    setNewSku(p.sku);
+    setNewImageUrl(p.imageUrl || '');
+    setErrors({});
+    setIsAdding(true);
   };
 
   const handleAddProduct = (e: React.FormEvent) => {
@@ -278,21 +407,37 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       return;
     }
 
-    const newProduct: Product = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newName,
-      description: newDesc,
-      price: parseFloat(newPrice),
-      stock: parseInt(newStock),
-      category: newCategory || 'Uncategorized',
-      supplier: newSupplier || 'Default Supplier',
-      sku: newSku,
-      imageUrl: newImageUrl
-    };
-    setProducts([...products, newProduct]);
+    if (editingProduct) {
+       setProducts(prev => prev.map(p => p.id === editingProduct.id ? {
+         ...p,
+         name: newName,
+         description: newDesc,
+         price: parseFloat(newPrice),
+         stock: parseInt(newStock),
+         category: newCategory,
+         supplier: newSupplier,
+         sku: newSku,
+         imageUrl: newImageUrl
+       } : p));
+       setScanSuccess('Product updated successfully');
+    } else {
+       const newProduct: Product = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: newName,
+        description: newDesc,
+        price: parseFloat(newPrice),
+        stock: parseInt(newStock),
+        category: newCategory || 'Uncategorized',
+        supplier: newSupplier || 'Default Supplier',
+        sku: newSku,
+        imageUrl: newImageUrl
+      };
+      setProducts([...products, newProduct]);
+      setScanSuccess('Product added successfully');
+    }
+
     setIsAdding(false);
-    setScanSuccess('Product added successfully');
-    
+    setEditingProduct(null);
     setNewName(''); setNewDesc(''); setNewPrice('');
     setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier(''); setNewImageUrl('');
     setErrors({});
@@ -318,12 +463,36 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   const validateSupplierForm = () => {
     const newErrors: Record<string, string> = {};
-    if (!supName.trim()) newErrors.supName = 'Company name is required';
-    if (!supContact.trim()) newErrors.supContact = 'Contact person is required';
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!supEmail.trim() || !emailRegex.test(supEmail)) newErrors.supEmail = 'Valid email is required';
-    if (!supPhone.trim()) newErrors.supPhone = 'Phone number is required';
-    if (!supAddress.trim()) newErrors.supAddress = 'Address is required';
+    
+    // Company Name
+    if (!supName.trim()) {
+      newErrors.supName = 'Company name is required';
+    }
+
+    // Contact Person
+    if (!supContact.trim()) {
+      newErrors.supContact = 'Contact person is required';
+    }
+
+    // Email Validation
+    if (!supEmail.trim()) {
+      newErrors.supEmail = 'Email address is required';
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(supEmail)) {
+        newErrors.supEmail = 'Invalid email format';
+      }
+    }
+
+    // Phone Validation
+    if (!supPhone.trim()) {
+      newErrors.supPhone = 'Phone number is required';
+    }
+
+    // Address Validation
+    if (!supAddress.trim()) {
+      newErrors.supAddress = 'Business address is required';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -382,6 +551,19 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       }
   };
 
+  const handleRestockFromSuggestion = (suggestion: ReorderSuggestion) => {
+    const product = products.find(p => p.name === suggestion.productName);
+    if (product) {
+       setSelectedIds(new Set([product.id]));
+       // Suggest new stock level = current + suggested
+       setBulkStockValue((suggestion.currentStock + suggestion.suggestedReorder).toString());
+       setBulkUpdateMode('set');
+       setShowBulkStockModal(true);
+    } else {
+       setGeneralError(`Product "${suggestion.productName}" not found.`);
+    }
+  };
+
   const getInputClass = (error?: string) => `w-full bg-black/20 border rounded-xl px-4 py-3 text-white focus:ring-2 outline-none transition-all placeholder-zinc-500 backdrop-blur-sm ${
     error ? 'border-rose-500 focus:ring-rose-500/50' : 'border-white/10 focus:ring-amber-500/50 focus:border-amber-500/50'
   }`;
@@ -390,6 +572,18 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   return (
     <div className="space-y-6 relative pb-32">
+       <style>{`
+        @keyframes scan-line {
+          0%, 100% { top: 10%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          50% { top: 90%; }
+        }
+        .animate-scan {
+          animation: scan-line 2s ease-in-out infinite;
+        }
+      `}</style>
+
       {/* Scanner Modal */}
       {isScanning && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
@@ -402,8 +596,20 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
             </div>
             <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
                <video ref={videoRef} className="w-full h-full object-cover" />
-               <div className="absolute inset-0 border-2 border-amber-500/50 rounded-lg m-12 pointer-events-none animate-pulse"></div>
-               {cameraError && <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-rose-400 p-4">{cameraError}</div>}
+               
+               {/* Pulsating Reticle */}
+               <div className="absolute inset-0 m-auto w-64 h-40 border-2 border-amber-500/50 rounded-lg pointer-events-none">
+                  {/* Corner Markers */}
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 -mt-1 -ml-1 border-amber-500"></div>
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 -mt-1 -mr-1 border-amber-500"></div>
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 -mb-1 -ml-1 border-amber-500"></div>
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 -mb-1 -mr-1 border-amber-500"></div>
+                  
+                  {/* Scanning Line */}
+                  <div className="absolute left-0 w-full h-0.5 bg-amber-400/80 shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-scan"></div>
+               </div>
+
+               {cameraError && <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-rose-400 p-4 font-bold">{cameraError}</div>}
             </div>
             <div className="p-6 text-center">
               <p className="text-zinc-500 text-sm">Point camera at barcode.</p>
@@ -422,25 +628,57 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
              
              <div className="flex justify-between items-start mb-6 relative z-10">
                 <div>
-                  <h3 className="text-xl font-bold text-white">Bulk Update Stock</h3>
-                  <p className="text-zinc-400 text-sm mt-1">Updating <span className="text-amber-500 font-bold">{selectedIds.size}</span> selected items</p>
+                  <h3 className="text-xl font-bold text-white">Bulk Stock Update</h3>
+                  <p className="text-zinc-400 text-sm mt-1">Modifying <span className="text-amber-500 font-bold">{selectedIds.size}</span> selected items</p>
                 </div>
                 <button onClick={() => setShowBulkStockModal(false)} className="text-zinc-500 hover:text-white"><X size={20} /></button>
              </div>
              
              <form onSubmit={handleBulkStockUpdate} className="relative z-10">
-                <div className="mb-6">
-                   <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">New Stock Quantity</label>
-                   <input 
-                      type="number"
-                      value={bulkStockValue}
-                      onChange={(e) => setBulkStockValue(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-white text-2xl font-bold focus:ring-2 focus:ring-amber-500/50 outline-none text-center"
-                      placeholder="0"
-                      autoFocus
-                      min="0"
-                   />
+                {/* Mode Toggles */}
+                <div className="flex bg-black/40 p-1 rounded-xl mb-6 border border-white/5">
+                   <button
+                     type="button"
+                     onClick={() => setBulkUpdateMode('set')}
+                     className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${bulkUpdateMode === 'set' ? 'bg-amber-500 text-black shadow-lg' : 'text-zinc-400 hover:text-white'}`}
+                   >
+                     Set Exact Qty
+                   </button>
+                   <button
+                     type="button"
+                     onClick={() => setBulkUpdateMode('adjust')}
+                     className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${bulkUpdateMode === 'adjust' ? 'bg-amber-500 text-black shadow-lg' : 'text-zinc-400 hover:text-white'}`}
+                   >
+                     Adjust (+/-)
+                   </button>
                 </div>
+
+                <div className="mb-6">
+                   <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">
+                      {bulkUpdateMode === 'set' ? 'New Quantity' : 'Adjustment Amount'}
+                   </label>
+                   <div className="relative">
+                      {bulkUpdateMode === 'adjust' && (
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                           <RefreshCw size={18} />
+                        </div>
+                      )}
+                      <input 
+                          type="number"
+                          value={bulkStockValue}
+                          onChange={(e) => setBulkStockValue(e.target.value)}
+                          className={`w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-white text-2xl font-bold focus:ring-2 focus:ring-amber-500/50 outline-none text-center ${bulkUpdateMode === 'adjust' ? 'pl-10' : ''}`}
+                          placeholder={bulkUpdateMode === 'set' ? "0" : "+10 or -5"}
+                          autoFocus
+                      />
+                   </div>
+                   {bulkUpdateMode === 'adjust' && (
+                      <p className="text-xs text-zinc-500 mt-2 text-center">
+                         Enter positive number to add, negative to subtract.
+                      </p>
+                   )}
+                </div>
+
                 <div className="flex gap-3">
                    <button 
                      type="button" 
@@ -453,7 +691,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                      type="submit" 
                      className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-colors shadow-lg shadow-amber-900/20"
                    >
-                     Update All
+                     {bulkUpdateMode === 'set' ? 'Set Stock' : 'Apply Adjustment'}
                    </button>
                 </div>
              </form>
@@ -465,13 +703,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       <div className="glass-panel p-2 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-2 z-20 shadow-xl">
         <div className="flex bg-black/20 p-1 rounded-xl border border-white/5 w-full sm:w-auto">
            <button 
-             onClick={() => { setActiveTab('products'); setSearchTerm(''); setIsAdding(false); setIsAddingSupplier(false); setErrors({}); }}
+             onClick={() => { setActiveTab('products'); setSearchTerm(''); setIsAdding(false); setEditingProduct(null); setIsAddingSupplier(false); setErrors({}); setShowFilters(false); }}
              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${activeTab === 'products' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
            >
              <Package size={16} /> Products
            </button>
            <button 
-             onClick={() => { setActiveTab('suppliers'); setSearchTerm(''); setIsAdding(false); setIsAddingSupplier(false); setErrors({}); }}
+             onClick={() => { setActiveTab('suppliers'); setSearchTerm(''); setIsAdding(false); setEditingProduct(null); setIsAddingSupplier(false); setErrors({}); setShowFilters(false); }}
              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${activeTab === 'suppliers' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
            >
              <Truck size={16} /> Suppliers
@@ -479,15 +717,27 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
         </div>
 
         <div className="flex w-full sm:w-auto gap-3 px-2 sm:px-0">
-           <div className="relative flex-1 sm:w-64 group">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
-             <input 
-               type="text" 
-               placeholder={activeTab === 'products' ? "Search products..." : "Search suppliers..."}
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               className="w-full bg-black/20 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none transition-all placeholder-zinc-600 backdrop-blur-sm"
-             />
+           {/* Search & Filter Group */}
+           <div className="flex gap-2 flex-1 sm:w-72">
+             <div className="relative flex-1 group">
+               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
+               <input 
+                 type="text" 
+                 placeholder={activeTab === 'products' ? "Search products..." : "Search suppliers..."}
+                 value={searchTerm}
+                 onChange={(e) => setSearchTerm(e.target.value)}
+                 className="w-full bg-black/20 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none transition-all placeholder-zinc-600 backdrop-blur-sm"
+               />
+             </div>
+             {activeTab === 'products' && (
+                <button 
+                   onClick={() => setShowFilters(!showFilters)}
+                   className={`p-2.5 rounded-xl border transition-all ${showFilters ? 'bg-amber-500 text-black border-amber-500' : 'bg-black/20 border-white/10 text-zinc-400 hover:text-white hover:bg-white/5'}`}
+                   title="Filter by Stock"
+                >
+                  <Filter size={18} />
+                </button>
+             )}
            </div>
            
            {activeTab === 'products' ? (
@@ -502,7 +752,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                    <span className="hidden sm:inline font-bold text-sm">AI Analysis</span>
                 </button>
                 <button 
-                  onClick={() => { setIsAdding(!isAdding); setErrors({}); }}
+                  onClick={() => { setIsAdding(!isAdding); setEditingProduct(null); setErrors({}); setNewName(''); setNewDesc(''); setNewPrice(''); setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier(''); setNewImageUrl(''); }}
                   className={`w-10 sm:w-auto bg-amber-500 hover:bg-amber-400 text-black p-2.5 sm:px-5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/20 ${isAdding ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
                 >
                   {isAdding ? <X size={20} /> : <><Plus size={20} /><span className="hidden sm:inline font-bold text-sm">Add Item</span></>}
@@ -518,6 +768,84 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
            )}
         </div>
       </div>
+      
+      {/* Stock Filters Panel */}
+      {showFilters && activeTab === 'products' && (
+        <div className="glass-panel p-4 rounded-2xl animate-in slide-in-from-top-4 duration-300 flex flex-col sm:flex-row items-end sm:items-center gap-4 border-t-0 -mt-2 z-10 relative">
+          <div className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
+            <Filter size={16} /> <span className="font-bold">Filters:</span>
+          </div>
+          
+          <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-3 gap-3">
+             {/* Category Filter */}
+             <div>
+                <select 
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
+                >
+                   <option value="All">All Categories</option>
+                   {categories.map((cat, idx) => (
+                      <option key={idx} value={cat} className="bg-slate-900 text-white">{cat}</option>
+                   ))}
+                   <option value="Uncategorized" className="bg-slate-900 text-white">Uncategorized</option>
+                </select>
+             </div>
+
+             <div>
+                <select 
+                  value={stockFilterType}
+                  onChange={(e) => setStockFilterType(e.target.value as any)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
+                >
+                   <option value="all">All Stock Levels</option>
+                   <option value="below">Below Quantity</option>
+                   <option value="above">Above Quantity</option>
+                   <option value="range">Range (Between)</option>
+                </select>
+             </div>
+
+             {stockFilterType !== 'all' && stockFilterType !== 'range' && (
+                <div className="flex items-center gap-2">
+                   <input 
+                      type="number" 
+                      value={stockThreshold}
+                      onChange={(e) => setStockThreshold(e.target.value)}
+                      placeholder="Qty"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
+                   />
+                </div>
+             )}
+
+             {stockFilterType === 'range' && (
+                <div className="flex items-center gap-2 col-span-2 sm:col-span-1">
+                   <input 
+                      type="number" 
+                      value={stockRange.min}
+                      onChange={(e) => setStockRange(prev => ({ ...prev, min: e.target.value }))}
+                      placeholder="Min"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
+                   />
+                   <span className="text-zinc-500">-</span>
+                   <input 
+                      type="number" 
+                      value={stockRange.max}
+                      onChange={(e) => setStockRange(prev => ({ ...prev, max: e.target.value }))}
+                      placeholder="Max"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
+                   />
+                </div>
+             )}
+          </div>
+          
+          <button 
+             onClick={() => { setStockFilterType('all'); setFilterCategory('All'); setShowFilters(false); }}
+             className="text-xs text-zinc-500 hover:text-white underline whitespace-nowrap"
+          >
+             Clear Filters
+          </button>
+        </div>
+      )}
 
       {/* --- PRODUCTS TAB CONTENT --- */}
       {activeTab === 'products' && (
@@ -592,8 +920,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                             </div>
                          </div>
                          
-                         <button className="mt-2 w-full py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-violet-900/20 flex items-center justify-center gap-2">
-                            <ShoppingCart size={16} /> Order Now
+                         <button 
+                            onClick={() => handleRestockFromSuggestion(item)}
+                            className="mt-2 w-full py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-violet-900/20 flex items-center justify-center gap-2"
+                         >
+                            <ShoppingCart size={16} /> Restock Now
                          </button>
                       </div>
                     ))}
@@ -610,14 +941,15 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
             </div>
           )}
 
-          {/* Add Product Form */}
+          {/* Add/Edit Product Form */}
           {isAdding && (
             <div className="glass-panel p-6 md:p-8 rounded-3xl mb-6 border border-white/10 relative overflow-hidden animate-in zoom-in-95 duration-300">
               <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10"></div>
               
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Package className="text-amber-500" size={20} /> Add New Product
+                  <Package className="text-amber-500" size={20} /> 
+                  {editingProduct ? 'Edit Product Details' : 'Add New Product'}
                 </h3>
               </div>
 
@@ -665,37 +997,89 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                     {errors.name && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.name}</p>}
                   </div>
 
+                  {/* Enhanced Image Input with Upload */}
                   <div>
-                     <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Image URL</label>
-                     <div className="flex gap-4">
-                       <div className="relative flex-1">
-                         <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
-                         <input
-                           type="text"
-                           value={newImageUrl}
-                           onChange={(e) => setNewImageUrl(e.target.value)}
-                           className={getInputClass(errors.image).replace('px-4', 'pl-10 pr-4')}
-                           placeholder="https://example.com/image.jpg"
+                     <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">
+                       Product Image <span className="text-zinc-600 normal-case font-normal">(Optional)</span>
+                     </label>
+                     <div className="flex gap-3">
+                       <div className="flex-1 space-y-2">
+                         <div className="relative group">
+                           <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
+                           <input
+                             type="text"
+                             value={newImageUrl.startsWith('data:') ? '' : newImageUrl}
+                             onChange={(e) => {
+                                 setNewImageUrl(e.target.value);
+                                 if (errors.image) setErrors(prev => ({...prev, image: ''})); // Clear error on typing
+                             }}
+                             onBlur={() => {
+                                if (newImageUrl && !newImageUrl.startsWith('data:') && !isValidUrl(newImageUrl)) {
+                                   setErrors(prev => ({...prev, image: 'Invalid URL format'}));
+                                }
+                             }}
+                             className={getInputClass(errors.image).replace('px-4', 'pl-10 pr-10')}
+                             placeholder={newImageUrl.startsWith('data:') ? "Image uploaded from device" : "https://example.com/image.jpg"}
+                             disabled={newImageUrl.startsWith('data:')}
+                           />
+                           {newImageUrl && (
+                              <button 
+                                type="button" 
+                                onClick={() => { setNewImageUrl(''); setErrors(prev => ({...prev, image: ''})); }} 
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-1"
+                              >
+                                <X size={14} />
+                              </button>
+                           )}
+                         </div>
+                         
+                         <div className="flex items-center gap-2">
+                            <div className="h-px bg-white/5 flex-1"></div>
+                            <span className="text-[10px] text-zinc-600 uppercase font-bold">OR</span>
+                            <div className="h-px bg-white/5 flex-1"></div>
+                         </div>
+
+                         <input 
+                           type="file" 
+                           ref={fileInputRef}
+                           onChange={handleImageUpload}
+                           accept="image/*"
+                           className="hidden"
                          />
+                         <button 
+                           type="button" 
+                           onClick={() => fileInputRef.current?.click()}
+                           className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl text-xs font-bold text-zinc-300 transition-colors flex items-center justify-center gap-2"
+                         >
+                           <Upload size={14} /> Upload from Device
+                         </button>
                        </div>
-                       {/* Image Preview */}
-                       <div className="w-12 h-12 rounded-xl bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                          {isValidUrl(newImageUrl) ? (
-                            <img src={newImageUrl} alt="Preview" className="w-full h-full object-cover" />
-                          ) : (
-                            <ImageIcon size={16} className="text-zinc-700" />
-                          )}
-                       </div>
+
+                       {/* Preview Box */}
+                       <ProductThumbnail 
+                         src={isValidUrl(newImageUrl) ? newImageUrl : undefined} 
+                         alt="Preview" 
+                         size="w-24 h-24" 
+                         onError={() => {
+                            if (newImageUrl && !newImageUrl.startsWith('data:')) {
+                                setErrors(prev => ({ ...prev, image: 'Unable to load image from URL' }));
+                            }
+                         }}
+                       />
                      </div>
                      {errors.image && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.image}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Detailed Description</label>
+                    <div className="flex justify-between items-center mb-1.5 ml-1">
+                        <label className="block text-xs font-bold uppercase text-zinc-500">Detailed Description</label>
+                        <span className={`text-[10px] ${newDesc.length > 450 ? 'text-amber-500' : 'text-zinc-600'}`}>{newDesc.length}/500</span>
+                    </div>
                     <textarea 
                       value={newDesc}
                       onChange={(e) => setNewDesc(e.target.value)}
-                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 outline-none h-32 resize-none placeholder-zinc-500 backdrop-blur-sm"
+                      maxLength={500}
+                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 outline-none h-32 min-h-[80px] resize-y placeholder-zinc-500 backdrop-blur-sm transition-all"
                       placeholder="Enter product details (ingredients, dimensions, features)..."
                     />
                   </div>
@@ -768,13 +1152,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                   <div className="flex justify-end pt-4 gap-3">
                     <button 
                       type="button" 
-                      onClick={() => { setIsAdding(false); setErrors({}); }}
+                      onClick={() => { setIsAdding(false); setEditingProduct(null); setErrors({}); }}
                       className="px-6 py-3.5 rounded-xl font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
                     >
                       Cancel
                     </button>
                     <button type="submit" className="flex-1 sm:flex-none bg-amber-500 hover:bg-amber-400 text-black px-8 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-amber-900/20 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2">
-                      <Save size={18} /> Save Product
+                      <Save size={18} /> {editingProduct ? 'Update Product' : 'Save Product'}
                     </button>
                   </div>
                 </div>
@@ -803,6 +1187,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                     <th className="p-4 border-b border-white/5 text-right">Price</th>
                     <th className="p-4 border-b border-white/5 text-center">Stock</th>
                     <th className="p-4 border-b border-white/5 text-center">Status</th>
+                    <th className="p-4 border-b border-white/5 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
@@ -819,13 +1204,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 shadow-lg">
-                                {product.imageUrl ? (
-                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    <Package size={20} className="text-zinc-700" />
-                                )}
-                              </div>
+                              <ProductThumbnail src={product.imageUrl} alt={product.name} />
                               <div>
                                   <div className="font-bold text-white group-hover:text-amber-500 transition-colors">{product.name}</div>
                                   <div className="text-xs text-zinc-500 truncate max-w-[200px] mt-0.5">{product.description || 'No description'}</div>
@@ -838,14 +1217,17 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         <td className="p-4">
                           <span className="bg-white/5 text-zinc-300 px-2.5 py-1 rounded-full text-xs font-medium border border-white/5">{product.category}</span>
                         </td>
-                        <td className="p-4 text-zinc-400 flex items-center gap-2">
-                          {product.supplier ? (
-                            <>
-                              <Truck size={14} className="opacity-50" /> {product.supplier}
-                            </>
-                          ) : (
-                            <span className="text-zinc-600">N/A</span>
-                          )}
+                        <td className="p-4 text-zinc-400">
+                          <div className="flex items-center gap-2">
+                            {product.supplier ? (
+                              <>
+                                <Truck size={14} className="opacity-50" /> 
+                                <span className="truncate max-w-[150px]" title={product.supplier}>{product.supplier}</span>
+                              </>
+                            ) : (
+                              <span className="text-zinc-600 italic">N/A</span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-4 text-right font-bold text-white">{formatCurrency(product.price)}</td>
                         <td className="p-4 text-center">
@@ -862,11 +1244,20 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                             </span>
                           )}
                         </td>
+                        <td className="p-4 text-center">
+                           <button 
+                             onClick={() => openEditProduct(product)}
+                             className="p-2 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-amber-400 transition-colors"
+                             title="Edit Product"
+                           >
+                             <Pencil size={16} />
+                           </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="p-16 text-center text-zinc-500">
+                      <td colSpan={9} className="p-16 text-center text-zinc-500">
                         <div className="flex flex-col items-center justify-center gap-4">
                           <Package size={48} strokeWidth={1} className="opacity-20" />
                           <p>No products found matching your search.</p>
@@ -891,7 +1282,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
              </div>
              
              <button 
-                onClick={() => setShowBulkStockModal(true)}
+                onClick={() => { setShowBulkStockModal(true); setBulkUpdateMode('set'); setBulkStockValue(''); }}
                 className="flex items-center gap-2 text-sm font-bold text-zinc-300 hover:text-white transition-colors"
              >
                  <Layers size={18} className="text-amber-500" /> Update Stock

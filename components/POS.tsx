@@ -12,6 +12,30 @@ interface POSProps {
 
 type PaymentMethod = 'cash' | 'card' | 'ewallet' | 'qr';
 
+// Audio Context for Beep Sound
+const playBeep = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch beep
+    gain.gain.setValueAtTime(0.1, ctx.currentTime); // Low volume
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.error('Audio beep failed', e);
+  }
+};
+
 export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -133,6 +157,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                   const product = products.find(p => p.sku === text);
                   
                   if (product) {
+                    playBeep();
                     lastScannedCode.current = text;
                     lastScanTime.current = now;
                     addToCart(product);
@@ -199,15 +224,26 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
 
   return (
     <div className="h-[calc(100vh-6rem)] md:h-[calc(100vh-7rem)] flex flex-col lg:flex-row gap-6 relative">
-      
+      <style>{`
+        @keyframes scan-line {
+          0%, 100% { top: 10%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          50% { top: 90%; }
+        }
+        .animate-scan {
+          animation: scan-line 2s ease-in-out infinite;
+        }
+      `}</style>
+
       {/* --- SCANNER OVERLAY --- */}
       {isScanning && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
-          <div className={`w-full max-w-lg bg-[#18181b] border-2 rounded-3xl overflow-hidden relative transition-all duration-300 ${scanSuccess ? 'border-emerald-500 shadow-[0_0_50px_rgba(16,185,129,0.5)]' : 'border-[#27272a] shadow-2xl'}`}>
+          <div className={`w-full max-w-lg bg-[#18181b] border-2 rounded-3xl overflow-hidden relative transition-all duration-300 transform ${scanSuccess ? 'border-emerald-500 shadow-[0_0_80px_rgba(16,185,129,0.4)] scale-105' : 'border-[#27272a] shadow-2xl'}`}>
             <div className="p-4 border-b border-[#27272a] flex justify-between items-center bg-[#09090b]">
-              <h3 className={`font-bold flex items-center gap-2 transition-colors ${scanSuccess ? 'text-emerald-400' : 'text-white'}`}>
-                <ScanBarcode className={scanSuccess ? 'text-emerald-400' : 'text-amber-500'} /> 
-                {scanSuccess ? 'Item Added!' : 'Scan Product Barcode'}
+              <h3 className={`font-bold flex items-center gap-2 transition-colors duration-300 ${scanSuccess ? 'text-emerald-400' : 'text-white'}`}>
+                <ScanBarcode className={scanSuccess ? 'text-emerald-400 animate-bounce' : 'text-amber-500'} /> 
+                {scanSuccess ? 'Product Added!' : 'Scan Product Barcode'}
               </h3>
               <button onClick={stopScanning} className="text-zinc-400 hover:text-white p-1"><X size={24} /></button>
             </div>
@@ -219,17 +255,17 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                <div className={`absolute inset-0 m-auto w-64 h-40 border-2 rounded-lg pointer-events-none transition-all duration-300 ${
                  scanSuccess 
                    ? 'border-emerald-400 scale-105 bg-emerald-500/10' 
-                   : 'border-amber-500/50 animate-pulse'
+                   : 'border-amber-500/50'
                }`}>
                   {/* Corner Markers */}
-                  <div className={`absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 -mt-1 -ml-1 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
-                  <div className={`absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 -mt-1 -mr-1 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
-                  <div className={`absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 -mb-1 -ml-1 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
-                  <div className={`absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 -mb-1 -mr-1 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
+                  <div className={`absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 -mt-1 -ml-1 transition-colors duration-300 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
+                  <div className={`absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 -mt-1 -mr-1 transition-colors duration-300 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
+                  <div className={`absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 -mb-1 -ml-1 transition-colors duration-300 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
+                  <div className={`absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 -mb-1 -mr-1 transition-colors duration-300 ${scanSuccess ? 'border-emerald-400' : 'border-amber-500'}`}></div>
                   
                   {/* Scanning Line */}
                   {!scanSuccess && (
-                     <div className="absolute top-0 left-0 w-full h-0.5 bg-amber-500/80 shadow-[0_0_10px_rgba(245,158,11,0.8)] animate-[scan_2s_ease-in-out_infinite]" style={{ top: '50%' }}></div>
+                     <div className="absolute left-0 w-full h-0.5 bg-amber-400/80 shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-scan"></div>
                   )}
                </div>
 
