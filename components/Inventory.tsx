@@ -1,9 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2 } from 'lucide-react';
-import { Product, Supplier } from '../types';
+import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Product, Supplier, Transaction, ReorderSuggestion } from '../types';
 import { formatCurrency } from '../constants';
-import { enhanceProductDetails } from '../services/geminiService';
+import { enhanceProductDetails, analyzeStockLevels } from '../services/geminiService';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 interface InventoryProps {
@@ -12,6 +12,7 @@ interface InventoryProps {
   categories: string[];
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
+  transactions: Transaction[];
 }
 
 // Utility: URL Validator
@@ -23,7 +24,7 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, setSuppliers }) => {
+export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, setSuppliers, transactions }) => {
   const [activeTab, setActiveTab] = useState<'products' | 'suppliers'>('products');
   
   const [isAdding, setIsAdding] = useState(false);
@@ -38,6 +39,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const [newCategory, setNewCategory] = useState('');
   const [newSupplier, setNewSupplier] = useState('');
   const [newSku, setNewSku] = useState('');
+  const [newImageUrl, setNewImageUrl] = useState('');
 
   // Supplier State (Add/Edit)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -56,6 +58,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
+  
+  // Stock Analysis State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [suggestions, setSuggestions] = useState<ReorderSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<any>(null);
@@ -98,6 +105,19 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       setGeneralError("Failed to auto-fill details. Please try again.");
     } finally {
       setIsEnhancing(false);
+    }
+  };
+
+  const handleAnalyzeStock = async () => {
+    setIsAnalyzing(true);
+    setShowSuggestions(true);
+    try {
+      const results = await analyzeStockLevels(products, transactions);
+      setSuggestions(results);
+    } catch (e) {
+      setGeneralError("Failed to analyze stock levels.");
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -169,8 +189,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     if (!newCategory) newErrors.category = 'Category is required';
     if (!newSupplier) newErrors.supplier = 'Supplier is required';
     
-    // Future: Image URL validation placeholder
-    // if (imageUrl && !isValidUrl(imageUrl)) newErrors.image = 'Invalid URL format';
+    // Image URL validation
+    if (newImageUrl && !isValidUrl(newImageUrl)) {
+      newErrors.image = 'Invalid URL format';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -191,14 +213,15 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       stock: parseInt(newStock),
       category: newCategory || 'Uncategorized',
       supplier: newSupplier || 'Default Supplier',
-      sku: newSku
+      sku: newSku,
+      imageUrl: newImageUrl
     };
     setProducts([...products, newProduct]);
     setIsAdding(false);
     setScanSuccess('Product added successfully');
     
     setNewName(''); setNewDesc(''); setNewPrice('');
-    setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier('');
+    setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier(''); setNewImageUrl('');
     setErrors({});
   };
 
@@ -356,12 +379,23 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
            </div>
            
            {activeTab === 'products' ? (
-              <button 
-                onClick={() => { setIsAdding(!isAdding); setErrors({}); }}
-                className={`w-10 sm:w-auto bg-amber-500 hover:bg-amber-400 text-black p-2.5 sm:px-5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/20 ${isAdding ? 'bg-[#27272a] text-white hover:bg-[#3f3f46]' : ''}`}
-              >
-                {isAdding ? <X size={20} /> : <><Plus size={20} /><span className="hidden sm:inline font-bold text-sm">Add Item</span></>}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAnalyzeStock}
+                  disabled={isAnalyzing}
+                  className="w-10 sm:w-auto bg-cyan-600 hover:bg-cyan-500 text-white p-2.5 sm:px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-900/20 disabled:opacity-50"
+                  title="AI Stock Analysis"
+                >
+                   {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Brain size={20} />}
+                   <span className="hidden sm:inline font-bold text-sm">AI Analysis</span>
+                </button>
+                <button 
+                  onClick={() => { setIsAdding(!isAdding); setErrors({}); }}
+                  className={`w-10 sm:w-auto bg-amber-500 hover:bg-amber-400 text-black p-2.5 sm:px-5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/20 ${isAdding ? 'bg-[#27272a] text-white hover:bg-[#3f3f46]' : ''}`}
+                >
+                  {isAdding ? <X size={20} /> : <><Plus size={20} /><span className="hidden sm:inline font-bold text-sm">Add Item</span></>}
+                </button>
+              </div>
            ) : (
               <button 
                 onClick={() => isAddingSupplier ? setIsAddingSupplier(false) : openAddSupplier()}
@@ -376,6 +410,61 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       {/* --- PRODUCTS TAB CONTENT --- */}
       {activeTab === 'products' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+          
+          {/* AI Reorder Suggestions Panel */}
+          {showSuggestions && (
+            <div className="bg-gradient-to-br from-cyan-900/20 to-blue-900/10 border border-cyan-500/30 rounded-3xl p-6 mb-6 shadow-2xl relative overflow-hidden">
+               <div className="flex justify-between items-start mb-6">
+                 <div>
+                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                     <Brain className="text-cyan-400" /> AI Reorder Suggestions
+                   </h3>
+                   <p className="text-cyan-200/60 text-sm mt-1">Based on current stock levels and sales velocity.</p>
+                 </div>
+                 <button onClick={() => setShowSuggestions(false)} className="text-cyan-400 hover:text-white transition-colors">
+                   <X size={20} />
+                 </button>
+               </div>
+
+               {isAnalyzing ? (
+                 <div className="flex items-center justify-center py-12 gap-3 text-cyan-400">
+                    <Loader2 size={24} className="animate-spin" />
+                    <span className="font-bold">Analyzing inventory patterns...</span>
+                 </div>
+               ) : suggestions.length > 0 ? (
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {suggestions.map((item, idx) => (
+                      <div key={idx} className="bg-[#09090b]/80 border border-cyan-500/20 rounded-xl p-4 flex flex-col gap-3 hover:border-cyan-500/50 transition-colors">
+                         <div className="flex justify-between items-start">
+                           <h4 className="font-bold text-white truncate pr-2">{item.productName}</h4>
+                           <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                             item.priority === 'High' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 
+                             item.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                             'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                           }`}>
+                             {item.priority}
+                           </span>
+                         </div>
+                         <div className="text-xs text-zinc-400 space-y-1">
+                            <p>Current Stock: <span className="text-zinc-200">{item.currentStock}</span></p>
+                            <p>Reason: <span className="text-zinc-200 italic">{item.reason}</span></p>
+                         </div>
+                         <div className="mt-auto pt-3 border-t border-cyan-500/10 flex justify-between items-center">
+                            <span className="text-xs text-cyan-500">Suggested Order:</span>
+                            <span className="font-bold text-white text-lg">{item.suggestedReorder}</span>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+               ) : (
+                 <div className="text-center py-8 text-cyan-200/50 flex flex-col items-center gap-2">
+                    <Check size={32} />
+                    <p>Inventory levels look healthy! No immediate reorders needed.</p>
+                 </div>
+               )}
+            </div>
+          )}
+
           {/* Add Product Form */}
           {isAdding && (
             <div className="bg-[#18181b] p-6 md:p-8 rounded-3xl mb-6 border border-[#27272a] relative overflow-hidden">
@@ -427,6 +516,21 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         </button>
                     </div>
                     {errors.name && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.name}</p>}
+                  </div>
+
+                  <div>
+                     <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Image URL</label>
+                     <div className="relative">
+                       <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
+                       <input
+                         type="text"
+                         value={newImageUrl}
+                         onChange={(e) => setNewImageUrl(e.target.value)}
+                         className={getInputClass(errors.image).replace('px-4', 'pl-10 pr-4')}
+                         placeholder="https://example.com/image.jpg"
+                       />
+                     </div>
+                     {errors.image && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.image}</p>}
                   </div>
 
                   <div>
@@ -541,8 +645,19 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                     filteredProducts.map((product) => (
                       <tr key={product.id} className="hover:bg-[#27272a]/50 transition-colors group">
                         <td className="p-4">
-                          <div className="font-bold text-white group-hover:text-amber-500 transition-colors">{product.name}</div>
-                          <div className="text-xs text-zinc-500 truncate max-w-[200px] mt-0.5">{product.description || 'No description'}</div>
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-[#27272a] border border-[#3f3f46] flex items-center justify-center overflow-hidden shrink-0">
+                                {product.imageUrl ? (
+                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <Package size={20} className="text-zinc-600" />
+                                )}
+                              </div>
+                              <div>
+                                  <div className="font-bold text-white group-hover:text-amber-500 transition-colors">{product.name}</div>
+                                  <div className="text-xs text-zinc-500 truncate max-w-[200px] mt-0.5">{product.description || 'No description'}</div>
+                              </div>
+                          </div>
                         </td>
                         <td className="p-4">
                           <span className="font-mono text-xs bg-[#09090b] text-zinc-400 px-2 py-1 rounded border border-[#27272a]">{product.sku}</span>

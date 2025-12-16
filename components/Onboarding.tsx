@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles } from 'lucide-react';
 import { OnboardingState } from '../types';
 import { generateBusinessCategories } from '../services/geminiService';
+import { Logo } from './Logo';
 
 interface OnboardingProps {
   onComplete: (data: OnboardingState) => void;
@@ -115,8 +116,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         {step === 0 && (
           <div className="bg-[#18181b] border border-[#27272a] p-8 rounded-3xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500">
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
-                <Store size={32} />
+              <div className="w-20 h-20 bg-[#27272a] rounded-2xl flex items-center justify-center mx-auto mb-6 border border-[#3f3f46] shadow-inner">
+                <Logo className="w-10 h-10" />
               </div>
               <h2 className="text-2xl font-bold text-white">Let's set up your store</h2>
               <p className="text-zinc-400 mt-2">Tell us about your business to personalize your experience.</p>

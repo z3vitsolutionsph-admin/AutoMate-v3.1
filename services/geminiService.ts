@@ -197,3 +197,68 @@ export const getSupportResponse = async (userMessage: string): Promise<string> =
     return response.text?.trim() || "I didn't understand that.";
   }, 2, 500, "Support system is currently busy. Please try again.");
 };
+
+/**
+ * Analyzes stock levels against recent transaction history to suggest reorders.
+ */
+export const analyzeStockLevels = async (
+  products: any[], 
+  transactions: any[]
+): Promise<any[]> => {
+  if (!process.env.API_KEY) return [];
+
+  return callWithRetry(async () => {
+    // 1. Calculate Sales Velocity (Total Quantity Sold per Product in history)
+    const salesVelocity: Record<string, number> = {};
+    transactions.forEach(t => {
+      if (t.status === 'Completed') {
+        salesVelocity[t.product] = (salesVelocity[t.product] || 0) + (t.quantity || 1);
+      }
+    });
+
+    // 2. Prepare concise data payload for AI
+    const inventorySummary = products.map(p => ({
+      name: p.name,
+      currentStock: p.stock,
+      totalSoldRecently: salesVelocity[p.name] || 0
+    }));
+
+    const prompt = `
+      You are an inventory optimization engine. Analyze this data: ${JSON.stringify(inventorySummary)}.
+      Identify products that need reordering based on low stock or high sales velocity.
+      
+      Return a JSON array of objects with these properties:
+      - productName (string)
+      - currentStock (number)
+      - suggestedReorder (number) - Suggest a reasonable amount to buy.
+      - reason (string) - Brief explanation (e.g., "High velocity", "Critical stock").
+      - priority (string) - "High", "Medium", or "Low".
+
+      Only return items that genuinely need attention. If everything is fine, return an empty array.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              productName: { type: Type.STRING },
+              currentStock: { type: Type.NUMBER },
+              suggestedReorder: { type: Type.NUMBER },
+              reason: { type: Type.STRING },
+              priority: { type: Type.STRING }
+            }
+          }
+        }
+      }
+    });
+
+    let text = response.text || "[]";
+    return JSON.parse(text);
+  }, 2, 1000, []);
+};

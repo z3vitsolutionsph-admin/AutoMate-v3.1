@@ -7,6 +7,7 @@ import { RoleShell } from './components/RoleShell';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { POS } from './components/POS';
+import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
 import { Settings } from './components/Settings';
@@ -175,6 +176,7 @@ const App: React.FC = () => {
             categories={categories}
             suppliers={suppliers}
             setSuppliers={setSuppliers}
+            transactions={transactions}
           />
         );
       case ViewState.POS:
@@ -182,6 +184,13 @@ const App: React.FC = () => {
           <POS 
             products={products} 
             onTransactionComplete={handleTransactionComplete} 
+          />
+        );
+      case ViewState.REPORTING:
+        return (
+          <Reporting
+            transactions={transactions}
+            products={products}
           />
         );
       case ViewState.PROMOTER:

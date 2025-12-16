@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Printer, ScanBarcode, X, Camera, Ban, Percent, Settings, AlertCircle, Check, ShoppingBag, ArrowLeft, Save, MapPin, Phone, MessageSquare, Store, RotateCcw, Smartphone, AlertTriangle, ChefHat } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Printer, ScanBarcode, X, Camera, Ban, Percent, Settings, AlertCircle, Check, ShoppingBag, ArrowLeft, Save, MapPin, Phone, MessageSquare, Store, RotateCcw, Smartphone, AlertTriangle, ChefHat, Filter, ChevronDown } from 'lucide-react';
 import { Product, CartItem, Transaction } from '../types';
 import { formatCurrency } from '../constants';
 import { BrowserMultiFormatReader } from '@zxing/browser';
@@ -15,6 +15,8 @@ type PaymentMethod = 'cash' | 'card' | 'ewallet' | 'qr';
 export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedSupplier, setSelectedSupplier] = useState<string>('All');
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>('cash');
   
   // Modals
@@ -37,6 +39,15 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
   const controlsRef = useRef<any>(null);
   const lastScannedCode = useRef<string | null>(null);
   const lastScanTime = useRef<number>(0);
+
+  // Derived Filters
+  const uniqueCategories = useMemo(() => 
+    ['All', ...Array.from(new Set(products.map(p => p.category))).sort()], 
+  [products]);
+
+  const uniqueSuppliers = useMemo(() => 
+    ['All', ...Array.from(new Set(products.map(p => p.supplier || 'N/A'))).sort()], 
+  [products]);
 
   const addToCart = (product: Product) => {
     if (product.stock <= 0) return;
@@ -163,10 +174,14 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
     setDiscountPercent('0');
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    const matchesSupplier = selectedSupplier === 'All' || p.supplier === selectedSupplier;
+
+    return matchesSearch && matchesCategory && matchesSupplier;
+  });
 
   return (
     <div className="h-[calc(100vh-6rem)] md:h-[calc(100vh-7rem)] flex flex-col lg:flex-row gap-6 relative">
@@ -217,53 +232,108 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
 
       {/* --- LEFT: Product Grid --- */}
       <div className={`flex-1 flex flex-col gap-6 min-h-0 ${showCartMobile ? 'hidden lg:flex' : 'flex'}`}>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
           <h2 className="text-2xl font-bold text-white">Menu</h2>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-             <div className="relative flex-1 sm:w-64 group">
-               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
-               <input 
-                 type="text" 
-                 placeholder="Search dishes or SKU..." 
-                 value={searchTerm}
-                 onChange={(e) => setSearchTerm(e.target.value)}
-                 className="w-full bg-[#18181b] border border-[#27272a] rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder-zinc-600"
-               />
+          
+          <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 w-full xl:w-auto">
+             
+             {/* Filters Group */}
+             <div className="flex gap-2 w-full sm:w-auto">
+                {/* Category Select */}
+                <div className="relative flex-1 sm:flex-none">
+                    <select 
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="w-full sm:w-40 bg-[#18181b] border border-[#27272a] rounded-xl pl-3 pr-8 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none appearance-none cursor-pointer"
+                    >
+                        <option value="All">All Categories</option>
+                        {uniqueCategories.filter(c => c !== 'All').map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-zinc-500">
+                        <ChevronDown size={14} />
+                    </div>
+                </div>
+
+                {/* Supplier Select */}
+                <div className="relative flex-1 sm:flex-none">
+                    <select 
+                      value={selectedSupplier}
+                      onChange={(e) => setSelectedSupplier(e.target.value)}
+                      className="w-full sm:w-40 bg-[#18181b] border border-[#27272a] rounded-xl pl-3 pr-8 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none appearance-none cursor-pointer"
+                    >
+                        <option value="All">All Suppliers</option>
+                        {uniqueSuppliers.filter(s => s !== 'All').map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-zinc-500">
+                        <ChevronDown size={14} />
+                    </div>
+                </div>
              </div>
-             <button 
-                onClick={startScanning}
-                className="bg-[#18181b] hover:bg-[#27272a] text-amber-500 border border-[#27272a] hover:border-amber-500/30 p-2.5 rounded-xl transition-all shadow-lg active:scale-95"
-                title="Scan Barcode"
-             >
-                <ScanBarcode size={20} />
-             </button>
+
+             {/* Search & Scan Group */}
+             <div className="flex gap-3 w-full sm:w-auto flex-1 xl:flex-none">
+                 <div className="relative flex-1 sm:w-64 group">
+                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
+                   <input 
+                     type="text" 
+                     placeholder="Search dishes or SKU..." 
+                     value={searchTerm}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                     className="w-full bg-[#18181b] border border-[#27272a] rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder-zinc-600"
+                   />
+                 </div>
+                 <button 
+                    onClick={startScanning}
+                    className="bg-[#18181b] hover:bg-[#27272a] text-amber-500 border border-[#27272a] hover:border-amber-500/30 p-2.5 rounded-xl transition-all shadow-lg active:scale-95 flex-shrink-0"
+                    title="Scan Barcode"
+                 >
+                    <ScanBarcode size={20} />
+                 </button>
+             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-2 pb-24 lg:pb-0">
-           {filteredProducts.map(product => (
-             <div 
-               key={product.id}
-               onClick={() => addToCart(product)}
-               className={`
-                 bg-[#18181b] border border-[#27272a] p-4 rounded-3xl cursor-pointer transition-all hover:border-amber-500/50 hover:bg-[#27272a] flex flex-col justify-between h-[200px] group
-                 ${product.stock === 0 ? 'opacity-50 pointer-events-none grayscale' : ''}
-               `}
-             >
-                <div className="flex justify-center -mt-8 mb-2">
-                   <div className="w-24 h-24 rounded-full bg-[#09090b] border-4 border-[#18181b] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <ChefHat size={32} className="text-zinc-600 group-hover:text-amber-500 transition-colors" />
-                   </div>
-                </div>
-                <div className="text-center">
-                  <h3 className="text-white font-bold text-sm leading-tight line-clamp-2">{product.name}</h3>
-                  <p className="text-zinc-500 text-xs mt-1">{product.stock} available • {product.sku}</p>
-                </div>
-                <div className="text-center mt-2">
-                   <span className="text-amber-500 font-bold text-lg">{formatCurrency(product.price)}</span>
-                </div>
+           {filteredProducts.length > 0 ? (
+             filteredProducts.map(product => (
+               <div 
+                 key={product.id}
+                 onClick={() => addToCart(product)}
+                 className={`
+                   bg-[#18181b] border border-[#27272a] p-4 rounded-3xl cursor-pointer transition-all hover:border-amber-500/50 hover:bg-[#27272a] flex flex-col justify-between h-[200px] group
+                   ${product.stock === 0 ? 'opacity-50 pointer-events-none grayscale' : ''}
+                 `}
+               >
+                  <div className="flex justify-center -mt-8 mb-2">
+                     <div className="w-24 h-24 rounded-full bg-[#09090b] border-4 border-[#18181b] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <ChefHat size={32} className="text-zinc-600 group-hover:text-amber-500 transition-colors" />
+                     </div>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-white font-bold text-sm leading-tight line-clamp-2">{product.name}</h3>
+                    <p className="text-zinc-500 text-xs mt-1">{product.stock} available • {product.sku}</p>
+                  </div>
+                  <div className="text-center mt-2">
+                     <span className="text-amber-500 font-bold text-lg">{formatCurrency(product.price)}</span>
+                  </div>
+               </div>
+             ))
+           ) : (
+             <div className="col-span-full py-12 flex flex-col items-center justify-center text-zinc-500 gap-4">
+                <Search size={48} className="opacity-20" />
+                <p>No products found matching your filters.</p>
+                <button 
+                  onClick={() => { setSearchTerm(''); setSelectedCategory('All'); setSelectedSupplier('All'); }}
+                  className="text-amber-500 font-bold text-sm hover:underline"
+                >
+                  Clear all filters
+                </button>
              </div>
-           ))}
+           )}
         </div>
       </div>
 

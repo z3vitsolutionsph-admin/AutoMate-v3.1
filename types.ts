@@ -3,6 +3,7 @@ export enum ViewState {
   DASHBOARD = 'DASHBOARD',
   INVENTORY = 'INVENTORY',
   POS = 'POS',
+  REPORTING = 'REPORTING',
   PROMOTER = 'PROMOTER',
   SUPPORT = 'SUPPORT',
   SETTINGS = 'SETTINGS'
@@ -25,6 +26,7 @@ export interface Product {
   stock: number;
   description?: string;
   supplier?: string; 
+  imageUrl?: string;
 }
 
 export interface Supplier {
@@ -50,6 +52,14 @@ export interface Transaction {
   status: 'Completed' | 'Processing' | 'Refunded';
   quantity?: number;
   paymentMethod?: 'Cash' | 'GCash' | 'PayMaya' | 'QRPH' | 'Card';
+}
+
+export interface ReorderSuggestion {
+  productName: string;
+  currentStock: number;
+  suggestedReorder: number;
+  reason: string;
+  priority: 'High' | 'Medium' | 'Low';
 }
 
 export interface PromoterTier {

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Users, LifeBuoy, LogOut, Settings } from 'lucide-react';
-import { ViewState } from '../types';
+import { LayoutDashboard, Package, ShoppingCart, Users, LifeBuoy, LogOut, Settings, BarChart3 } from 'lucide-react';
+import { ViewState, UserRole } from '../types';
 import { Logo } from './Logo';
 
 interface SidebarProps {
@@ -10,17 +10,43 @@ interface SidebarProps {
   isMobileOpen: boolean;
   setIsMobileOpen: (open: boolean) => void;
   onLogout: () => void;
+  role: UserRole;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobileOpen, setIsMobileOpen, onLogout }) => {
-  const navItems = [
+// User Role Policy Configuration
+const ROLE_PERMISSIONS: Record<UserRole, ViewState[]> = {
+  [UserRole.SUPERUSER]: [
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
+  [UserRole.ADMIN_PRO]: [
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
+  [UserRole.ADMIN]: [
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
+  [UserRole.PROMOTER]: [
+    ViewState.PROMOTER, ViewState.SUPPORT
+  ],
+  [UserRole.EMPLOYEE]: [
+    ViewState.POS, ViewState.INVENTORY, ViewState.SUPPORT
+  ]
+};
+
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobileOpen, setIsMobileOpen, onLogout, role }) => {
+  
+  const allNavItems = [
     { id: ViewState.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { id: ViewState.INVENTORY, label: 'Inventory', icon: Package },
     { id: ViewState.POS, label: 'POS System', icon: ShoppingCart },
+    { id: ViewState.REPORTING, label: 'Reporting', icon: BarChart3 },
     { id: ViewState.PROMOTER, label: 'Promoters', icon: Users },
     { id: ViewState.SUPPORT, label: 'Support & AI', icon: LifeBuoy },
     { id: ViewState.SETTINGS, label: 'Settings', icon: Settings },
   ];
+
+  // Filter items based on role
+  const allowedViews = ROLE_PERMISSIONS[role] || [];
+  const navItems = allNavItems.filter(item => allowedViews.includes(item.id));
 
   return (
     <>
@@ -82,6 +108,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
         </nav>
 
         <div className="p-6 mt-auto border-t border-[#27272a] bg-[#09090b]">
+          <div className="mb-4 px-2">
+            <span className="text-xs text-zinc-600 font-medium uppercase tracking-widest">Logged in as</span>
+            <p className="text-sm font-bold text-zinc-400 mt-0.5">{role.replace('_', ' ')}</p>
+          </div>
           <button 
             onClick={onLogout}
             className="group w-full flex items-center gap-3 px-4 py-3 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
