@@ -29,7 +29,7 @@ async function callWithRetry<T>(
  * Suggests a category for a product based on its name and description.
  */
 export const categorizeProduct = async (name: string, description: string): Promise<string> => {
-  if (!process.env.API_KEY) return "Uncategorized (No API Key)";
+  if (!process.env.API_KEY) return "Uncategorized";
 
   return callWithRetry(async () => {
     const prompt = `
@@ -121,22 +121,9 @@ export const generateBusinessCategories = async (businessName: string, businessT
  */
 export const generateSalesForecast = async (transactions: any[]): Promise<{ forecast: {date: string, sales: number}[], insights: string[] }> => {
   if (!process.env.API_KEY || transactions.length < 5) {
-     const today = new Date();
-     const mockForecast = Array.from({length: 7}, (_, i) => {
-         const d = new Date(today);
-         d.setDate(d.getDate() + i + 1);
-         return {
-             date: d.toISOString().split('T')[0],
-             sales: Math.floor(Math.random() * 5000) + 5000
-         };
-     });
      return {
-         forecast: mockForecast,
-         insights: [
-             "Insufficient data for accurate AI prediction.",
-             "Mock data generated for demonstration.",
-             "Continue selling to unlock real insights."
-         ]
+         forecast: [],
+         insights: ["Insufficient data for AI prediction. Please record more transactions."]
      };
   }
 
@@ -208,10 +195,14 @@ export const analyzeStockLevels = async (
   if (!process.env.API_KEY) return [];
 
   return callWithRetry(async () => {
-    // 1. Calculate Sales Velocity (Total Quantity Sold per Product in history)
+    // 1. Calculate Sales Velocity (Total Quantity Sold per Product in LAST 30 DAYS)
     const salesVelocity: Record<string, number> = {};
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     transactions.forEach(t => {
-      if (t.status === 'Completed') {
+      const tDate = new Date(t.date);
+      if (t.status === 'Completed' && tDate >= thirtyDaysAgo) {
         salesVelocity[t.product] = (salesVelocity[t.product] || 0) + (t.quantity || 1);
       }
     });
@@ -221,19 +212,21 @@ export const analyzeStockLevels = async (
       name: p.name,
       category: p.category,
       currentStock: p.stock,
-      totalSoldRecently: salesVelocity[p.name] || 0
+      totalSoldLast30Days: salesVelocity[p.name] || 0
     }));
 
     const prompt = `
       You are an inventory optimization engine. Analyze this data: ${JSON.stringify(inventorySummary)}.
-      Identify products that need reordering based on low stock, category importance, or high sales velocity.
+      Identify products that need reordering based on:
+      1. Low stock levels.
+      2. High sales velocity in the last 30 days (totalSoldLast30Days).
       
       Return a JSON array of objects with these properties:
       - productName (string)
       - currentStock (number)
-      - suggestedReorder (number) - Suggest a reasonable amount to buy.
-      - reason (string) - Brief explanation (e.g., "High velocity", "Critical stock", "Popular Category").
-      - priority (string) - "High", "Medium", or "Low".
+      - suggestedReorder (number) - Suggest a reasonable amount to buy to cover next 30 days.
+      - reason (string) - Brief explanation (e.g., "Sold 50 units in 30 days", "Critical stock < 5").
+      - priority (string) - "High" (Urgent), "Medium", or "Low".
 
       Only return items that genuinely need attention. If everything is fine, return an empty array.
     `;

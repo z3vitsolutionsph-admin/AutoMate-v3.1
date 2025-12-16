@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon, CheckSquare, Square, Layers, Edit3, Save, ShoppingCart, Filter, Upload, Link as LinkIcon, RefreshCw, ChevronDown } from 'lucide-react';
+import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon, CheckSquare, Square, Layers, Edit3, Save, ShoppingCart, Filter, Upload, Link as LinkIcon, RefreshCw, ChevronDown, TrendingUp } from 'lucide-react';
 import { Product, Supplier, Transaction, ReorderSuggestion } from '../types';
 import { formatCurrency } from '../constants';
 import { enhanceProductDetails, analyzeStockLevels } from '../services/geminiService';
@@ -15,10 +15,10 @@ interface InventoryProps {
   transactions: Transaction[];
 }
 
-// Utility: URL Validator (Enhanced to support Data URIs)
+// Utility: URL Validator
 const isValidUrl = (urlString: string): boolean => {
   if (!urlString) return false;
-  if (urlString.startsWith('data:image/')) return true; // Accept Data URIs from uploads
+  if (urlString.startsWith('data:image/')) return true;
   try {
     const url = new URL(urlString);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -70,7 +70,7 @@ const playBeep = () => {
     gain.connect(ctx.destination);
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046.50, ctx.currentTime); // C6 - Slightly higher pitch for inventory
+    osc.frequency.setValueAtTime(1046.50, ctx.currentTime);
     gain.gain.setValueAtTime(0.1, ctx.currentTime);
 
     osc.start();
@@ -80,24 +80,404 @@ const playBeep = () => {
   }
 };
 
+// --- REUSABLE PRODUCT MODAL COMPONENT ---
+interface ProductFormModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: Omit<Product, 'id'>) => void;
+  initialData?: Product | null;
+  categories: string[];
+  suppliers: Supplier[];
+  onScanRequest: () => void;
+  externalSku?: string | null;
+  products: Product[]; // Passed for SKU uniqueness check
+}
+
+const ProductFormModal: React.FC<ProductFormModalProps> = ({
+  isOpen, onClose, onSubmit, initialData, categories, suppliers, onScanRequest, externalSku, products
+}) => {
+  // Form State
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
+  const [category, setCategory] = useState('');
+  const [supplier, setSupplier] = useState('');
+  const [sku, setSku] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync with initialData or Reset
+  useEffect(() => {
+    if (isOpen) {
+      if (initialData) {
+        setName(initialData.name);
+        setDescription(initialData.description || '');
+        setPrice(initialData.price.toString());
+        setStock(initialData.stock.toString());
+        setCategory(initialData.category);
+        setSupplier(initialData.supplier || '');
+        setSku(initialData.sku);
+        setImageUrl(initialData.imageUrl || '');
+      } else {
+        // Reset for Add Mode
+        setName('');
+        setDescription('');
+        setPrice('');
+        setStock('');
+        setCategory('');
+        setSupplier('');
+        setSku(`SKU-${Math.floor(Math.random() * 10000)}`); // Auto-generate
+        setImageUrl('');
+      }
+      setErrors({});
+    }
+  }, [isOpen, initialData]);
+
+  // Sync with External Scanner
+  useEffect(() => {
+    if (externalSku) {
+      setSku(externalSku);
+      setErrors(prev => ({ ...prev, sku: '' }));
+    }
+  }, [externalSku]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setErrors(prev => ({ ...prev, image: "File size too large (max 5MB)" }));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageUrl(reader.result as string);
+        setErrors(prev => ({ ...prev, image: '' }));
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
+
+  const handleSmartEnhance = async () => {
+    if (!name) {
+      setErrors(prev => ({ ...prev, name: 'Product name is required for AI enhancement' }));
+      return;
+    }
+    setIsEnhancing(true);
+    setErrors(prev => ({ ...prev, name: '' })); 
+    try {
+      const details = await enhanceProductDetails(name);
+      setCategory(details.category);
+      setDescription(details.description);
+    } catch (e) {
+      console.error("AI Enhance failed", e);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) newErrors.name = 'Product name is required';
+    
+    const priceValue = parseFloat(price);
+    if (!price || isNaN(priceValue) || priceValue < 0) newErrors.price = 'Valid price required';
+
+    const stockValue = Number(stock);
+    if (stock === '' || isNaN(stockValue) || stockValue < 0 || !Number.isInteger(stockValue)) {
+       newErrors.stock = 'Valid whole number required';
+    }
+
+    if (!sku.trim()) newErrors.sku = 'SKU is required';
+    else if (products.some(p => p.sku.toLowerCase() === sku.toLowerCase() && p.id !== initialData?.id)) {
+       newErrors.sku = 'SKU already exists';
+    }
+
+    if (!category) newErrors.category = 'Category is required';
+    if (!supplier) newErrors.supplier = 'Supplier is required';
+    
+    if (imageUrl && !isValidUrl(imageUrl)) newErrors.image = 'Invalid Image URL';
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    onSubmit({
+      name,
+      description,
+      price: parseFloat(price),
+      stock: parseInt(stock),
+      category: category || 'Uncategorized',
+      supplier: supplier || 'Default Supplier',
+      sku,
+      imageUrl
+    });
+  };
+
+  const getInputClass = (error?: string) => `w-full bg-black/40 border rounded-xl px-4 py-3 text-white focus:ring-2 outline-none transition-all placeholder-zinc-500 backdrop-blur-sm ${
+    error ? 'border-rose-500 focus:ring-rose-500/50' : 'border-white/10 focus:ring-amber-500/50 focus:border-amber-500/50'
+  }`;
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900/90 border border-white/10 rounded-3xl w-full max-w-4xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Package className="text-amber-500" size={24} /> 
+            {initialData ? 'Edit Product' : 'Add New Product'}
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-zinc-400 hover:text-white transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="overflow-y-auto p-6 md:p-8">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Column */}
+            <div className="space-y-6">
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">SKU / Barcode</label>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input 
+                      type="text" 
+                      value={sku}
+                      onChange={(e) => setSku(e.target.value)}
+                      className={getInputClass(errors.sku)}
+                      placeholder="Scan or enter SKU"
+                    />
+                     {errors.sku && <p className="text-xs text-rose-400 mt-1 ml-1 absolute -bottom-5">{errors.sku}</p>}
+                  </div>
+                  <button type="button" onClick={onScanRequest} className="bg-white/5 border border-white/10 hover:bg-white/10 text-amber-500 px-4 rounded-xl transition-colors shrink-0">
+                    <Camera size={20} />
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Product Name *</label>
+                <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className={getInputClass(errors.name)}
+                      placeholder="e.g. Wireless Headphones"
+                    />
+                    <button 
+                      type="button"
+                      onClick={handleSmartEnhance}
+                      disabled={!name || isEnhancing}
+                      className="bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500 hover:text-black px-4 rounded-xl flex items-center gap-2 text-sm font-bold transition-all disabled:opacity-50 whitespace-nowrap shrink-0"
+                    >
+                      {isEnhancing ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                      Auto-Fill
+                    </button>
+                </div>
+                {errors.name && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.name}</p>}
+              </div>
+
+              {/* Image Upload */}
+              <div>
+                 <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">
+                   Product Image <span className="text-zinc-600 normal-case font-normal">(Optional)</span>
+                 </label>
+                 <div className="flex gap-3">
+                   <div className="flex-1 space-y-2">
+                     <div className="relative group">
+                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
+                       <input
+                         type="text"
+                         value={imageUrl.startsWith('data:') ? '' : imageUrl}
+                         onChange={(e) => {
+                             setImageUrl(e.target.value);
+                             if (errors.image) setErrors(prev => ({...prev, image: ''}));
+                         }}
+                         onBlur={() => {
+                            if (imageUrl && !imageUrl.startsWith('data:') && !isValidUrl(imageUrl)) {
+                               setErrors(prev => ({...prev, image: 'Invalid URL format'}));
+                            }
+                         }}
+                         className={getInputClass(errors.image).replace('px-4', 'pl-10 pr-10')}
+                         placeholder={imageUrl.startsWith('data:') ? "Image uploaded from device" : "https://example.com/image.jpg"}
+                         disabled={imageUrl.startsWith('data:')}
+                       />
+                       {imageUrl && (
+                          <button 
+                            type="button" 
+                            onClick={() => { setImageUrl(''); setErrors(prev => ({...prev, image: ''})); }} 
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-1"
+                          >
+                            <X size={14} />
+                          </button>
+                       )}
+                     </div>
+                     
+                     <div className="flex items-center gap-2">
+                        <div className="h-px bg-white/5 flex-1"></div>
+                        <span className="text-[10px] text-zinc-600 uppercase font-bold">OR</span>
+                        <div className="h-px bg-white/5 flex-1"></div>
+                     </div>
+
+                     <input 
+                       type="file" 
+                       ref={fileInputRef}
+                       onChange={handleImageUpload}
+                       accept="image/*"
+                       className="hidden"
+                     />
+                     <button 
+                       type="button" 
+                       onClick={() => fileInputRef.current?.click()}
+                       className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl text-xs font-bold text-zinc-300 transition-colors flex items-center justify-center gap-2"
+                     >
+                       <Upload size={14} /> Upload from Device
+                     </button>
+                   </div>
+
+                   <ProductThumbnail 
+                     src={isValidUrl(imageUrl) ? imageUrl : undefined} 
+                     alt="Preview" 
+                     size="w-24 h-24" 
+                     onError={() => {
+                        if (imageUrl && !imageUrl.startsWith('data:')) {
+                            setErrors(prev => ({ ...prev, image: 'Unable to load image' }));
+                        }
+                     }}
+                   />
+                 </div>
+                 {errors.image && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.image}</p>}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1.5 ml-1">
+                    <label className="block text-xs font-bold uppercase text-zinc-500">Detailed Description</label>
+                    <span className={`text-[10px] ${description.length > 450 ? 'text-amber-500' : 'text-zinc-600'}`}>{description.length}/500</span>
+                </div>
+                <textarea 
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={500}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 outline-none h-32 min-h-[80px] resize-y placeholder-zinc-500 backdrop-blur-sm transition-all"
+                  placeholder="Enter product details..."
+                />
+              </div>
+            </div>
+            
+            {/* Right Column */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Price (₱) *</label>
+                  <input 
+                    type="number" 
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className={getInputClass(errors.price)}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                  />
+                  {errors.price && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.price}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Stock Qty *</label>
+                  <input 
+                    type="number" 
+                    value={stock}
+                    onChange={(e) => setStock(e.target.value)}
+                    className={getInputClass(errors.stock)}
+                    placeholder="0"
+                    min="0"
+                    step="1"
+                  />
+                  {errors.stock && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.stock}</p>}
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Supplier *</label>
+                <div className="relative">
+                  <Truck className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
+                  <select 
+                    value={supplier}
+                    onChange={(e) => setSupplier(e.target.value)}
+                    className={getInputClass(errors.supplier).replace('px-4', 'pl-10 pr-4')}
+                  >
+                     <option value="" disabled className="text-zinc-500">Select a Supplier</option>
+                     {suppliers.map(sup => (
+                       <option key={sup.id} value={sup.name} className="bg-slate-900 text-white">{sup.name}</option>
+                     ))}
+                  </select>
+                </div>
+                {errors.supplier && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supplier}</p>}
+              </div>
+
+              <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">Category *</label>
+                <div className="flex gap-2 flex-col">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className={getInputClass(errors.category)}
+                  >
+                    <option value="" disabled className="text-zinc-500">Select Category</option>
+                    {categories.map((cat, idx) => <option key={idx} value={cat} className="bg-slate-900 text-white">{cat}</option>)}
+                    <option value="Uncategorized" className="bg-slate-900 text-white">Uncategorized</option>
+                  </select>
+                  {errors.category && <p className="text-xs text-rose-400 ml-1">{errors.category}</p>}
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-white/10 bg-black/20 flex justify-end gap-3">
+          <button 
+            type="button" 
+            onClick={onClose}
+            className="px-6 py-3 rounded-xl font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleSubmit} 
+            className="bg-amber-500 hover:bg-amber-400 text-black px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-900/20 hover:scale-[1.02] active:scale-95 flex items-center gap-2"
+          >
+            <Save size={18} /> {initialData ? 'Update Product' : 'Save Product'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, setSuppliers, transactions }) => {
   const [activeTab, setActiveTab] = useState<'products' | 'suppliers'>('products');
   
-  const [isAdding, setIsAdding] = useState(false);
+  // Modal States
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // New Product State
-  const [newName, setNewName] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newPrice, setNewPrice] = useState('');
-  const [newStock, setNewStock] = useState('');
-  const [newCategory, setNewCategory] = useState('');
-  const [newSupplier, setNewSupplier] = useState('');
-  const [newSku, setNewSku] = useState('');
-  const [newImageUrl, setNewImageUrl] = useState('');
+  // Scanned SKU from Parent Scanner
+  const [scannedSku, setScannedSku] = useState<string | null>(null);
 
   // Supplier State (Add/Edit)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -106,6 +486,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const [supEmail, setSupEmail] = useState('');
   const [supPhone, setSupPhone] = useState('');
   const [supAddress, setSupAddress] = useState('');
+  const [supplierErrors, setSupplierErrors] = useState<Record<string, string>>({});
   
   // Bulk Actions State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -120,11 +501,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const [stockRange, setStockRange] = useState({ min: '0', max: '50' });
   const [filterCategory, setFilterCategory] = useState<string>('All');
 
-  // Validation State
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  
   // AI & Scanning State
-  const [isEnhancing, setIsEnhancing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
@@ -137,7 +514,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Proactive Alert Check
   const lowStockCount = products.filter(p => p.stock < 10).length;
@@ -169,13 +545,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.contactPerson.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Auto-generate SKU
-  useEffect(() => {
-    if (isAdding && !newSku && !editingProduct) {
-      setNewSku(`SKU-${Math.floor(Math.random() * 10000)}`);
-    }
-  }, [isAdding, editingProduct]);
 
   // Clear toasts
   useEffect(() => {
@@ -253,26 +622,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setScanSuccess(`Stock ${bulkUpdateMode === 'set' ? 'updated' : 'adjusted'} for selected items.`);
   };
 
-  const handleSmartEnhance = async () => {
-    if (!newName) {
-      setErrors(prev => ({ ...prev, name: 'Product name is required for AI enhancement' }));
-      return;
-    }
-    setIsEnhancing(true);
-    setGeneralError(null);
-    setErrors(prev => ({ ...prev, name: '' })); 
-    try {
-      const details = await enhanceProductDetails(newName);
-      setNewCategory(details.category);
-      setNewDesc(details.description);
-    } catch (e) {
-      setGeneralError("Failed to auto-fill details. Please try again.");
-    } finally {
-      setIsEnhancing(false);
-    }
-  };
-
   const handleAnalyzeStock = async () => {
+    // If no transactions, warn user but still proceed with static stock check if they want
+    if (transactions.length === 0) {
+        setGeneralError("No sales data available. Analysis may be based solely on stock levels.");
+    }
+
     setIsAnalyzing(true);
     setShowSuggestions(true);
     try {
@@ -280,6 +635,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       setSuggestions(results);
     } catch (e) {
       setGeneralError("Failed to analyze stock levels.");
+      setSuggestions([]); // Clear previous suggestions on failure
     } finally {
       setIsAnalyzing(false);
     }
@@ -304,7 +660,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                 if (result) {
                   playBeep();
                   const text = result.getText();
-                  setNewSku(text);
+                  setScannedSku(text); // Pass to Modal
                   setScanSuccess(text);
                   stopScanning(); 
                 }
@@ -330,123 +686,32 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setIsScanning(false);
   };
 
-  // Image Upload Handler
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setGeneralError("File size too large (max 5MB)");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewImageUrl(reader.result as string);
-        setErrors(prev => ({ ...prev, image: '' }));
-      };
-      reader.readAsDataURL(file);
-    }
-    // Reset input value to allow re-uploading the same file if needed
-    e.target.value = '';
-  };
-
-  const validateProductForm = () => {
-    const newErrors: Record<string, string> = {};
-    if (!newName.trim()) newErrors.name = 'Product name is required';
-    
-    // Strict Price Validation
-    const priceValue = parseFloat(newPrice);
-    if (!newPrice || isNaN(priceValue) || priceValue < 0) {
-       newErrors.price = 'Price must be a valid positive number';
-    }
-
-    // Strict Stock Validation
-    const stockValue = Number(newStock);
-    if (newStock === '' || isNaN(stockValue) || stockValue < 0) {
-       newErrors.stock = 'Stock must be 0 or greater';
-    } else if (!Number.isInteger(stockValue)) {
-       newErrors.stock = 'Stock must be a whole number';
-    }
-
-    // SKU Validation
-    if (!newSku.trim()) {
-       newErrors.sku = 'SKU is required';
-    } else if (products.some(p => p.sku.toLowerCase() === newSku.toLowerCase() && p.id !== editingProduct?.id)) {
-       newErrors.sku = 'SKU already exists';
-    }
-
-    if (!newCategory) newErrors.category = 'Category is required';
-    if (!newSupplier) newErrors.supplier = 'Supplier is required';
-    
-    // Image URL validation (now supports data URIs)
-    if (newImageUrl && !isValidUrl(newImageUrl)) {
-      newErrors.image = 'Invalid Image URL or Corrupt Data';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const openEditProduct = (p: Product) => {
     setEditingProduct(p);
-    setNewName(p.name);
-    setNewDesc(p.description || '');
-    setNewPrice(p.price.toString());
-    setNewStock(p.stock.toString());
-    setNewCategory(p.category);
-    setNewSupplier(p.supplier || '');
-    setNewSku(p.sku);
-    setNewImageUrl(p.imageUrl || '');
-    setErrors({});
-    setIsAdding(true);
+    setScannedSku(null);
+    setIsProductModalOpen(true);
   };
 
-  const handleAddProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateProductForm()) {
-      setGeneralError("Please fix the errors before saving.");
-      return;
-    }
-
+  const handleProductSubmit = (data: Omit<Product, 'id'>) => {
     if (editingProduct) {
-       setProducts(prev => prev.map(p => p.id === editingProduct.id ? {
-         ...p,
-         name: newName,
-         description: newDesc,
-         price: parseFloat(newPrice),
-         stock: parseInt(newStock),
-         category: newCategory,
-         supplier: newSupplier,
-         sku: newSku,
-         imageUrl: newImageUrl
-       } : p));
+       setProducts(prev => prev.map(p => p.id === editingProduct.id ? { ...p, ...data } : p));
        setScanSuccess('Product updated successfully');
     } else {
        const newProduct: Product = {
         id: Math.random().toString(36).substr(2, 9),
-        name: newName,
-        description: newDesc,
-        price: parseFloat(newPrice),
-        stock: parseInt(newStock),
-        category: newCategory || 'Uncategorized',
-        supplier: newSupplier || 'Default Supplier',
-        sku: newSku,
-        imageUrl: newImageUrl
+        ...data
       };
       setProducts([...products, newProduct]);
       setScanSuccess('Product added successfully');
     }
-
-    setIsAdding(false);
+    setIsProductModalOpen(false);
     setEditingProduct(null);
-    setNewName(''); setNewDesc(''); setNewPrice('');
-    setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier(''); setNewImageUrl('');
-    setErrors({});
   };
 
   const openAddSupplier = () => {
     setEditingSupplier(null);
     setSupName(''); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupAddress('');
-    setErrors({});
+    setSupplierErrors({});
     setIsAddingSupplier(true);
   };
 
@@ -457,44 +722,23 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setSupEmail(s.email);
     setSupPhone(s.phone);
     setSupAddress(s.address);
-    setErrors({});
+    setSupplierErrors({});
     setIsAddingSupplier(true);
   };
 
   const validateSupplierForm = () => {
     const newErrors: Record<string, string> = {};
-    
-    // Company Name
-    if (!supName.trim()) {
-      newErrors.supName = 'Company name is required';
-    }
-
-    // Contact Person
-    if (!supContact.trim()) {
-      newErrors.supContact = 'Contact person is required';
-    }
-
-    // Email Validation
-    if (!supEmail.trim()) {
-      newErrors.supEmail = 'Email address is required';
-    } else {
+    if (!supName.trim()) newErrors.supName = 'Company name is required';
+    if (!supContact.trim()) newErrors.supContact = 'Contact person is required';
+    if (!supEmail.trim()) newErrors.supEmail = 'Email address is required';
+    else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(supEmail)) {
-        newErrors.supEmail = 'Invalid email format';
-      }
+      if (!emailRegex.test(supEmail)) newErrors.supEmail = 'Invalid email format (e.g. user@example.com)';
     }
-
-    // Phone Validation
-    if (!supPhone.trim()) {
-      newErrors.supPhone = 'Phone number is required';
-    }
-
-    // Address Validation
-    if (!supAddress.trim()) {
-      newErrors.supAddress = 'Business address is required';
-    }
+    if (!supPhone.trim()) newErrors.supPhone = 'Phone number is required';
+    if (!supAddress.trim()) newErrors.supAddress = 'Business address is required';
     
-    setErrors(newErrors);
+    setSupplierErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
@@ -536,7 +780,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setIsAddingSupplier(false);
     setEditingSupplier(null);
     setSupName(''); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupAddress('');
-    setErrors({});
+    setSupplierErrors({});
   };
 
   const handleDeleteSupplier = (id: string, name: string) => {
@@ -555,7 +799,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     const product = products.find(p => p.name === suggestion.productName);
     if (product) {
        setSelectedIds(new Set([product.id]));
-       // Suggest new stock level = current + suggested
        setBulkStockValue((suggestion.currentStock + suggestion.suggestedReorder).toString());
        setBulkUpdateMode('set');
        setShowBulkStockModal(true);
@@ -584,9 +827,22 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
         }
       `}</style>
 
+      {/* --- REUSABLE PRODUCT MODAL --- */}
+      <ProductFormModal 
+        isOpen={isProductModalOpen}
+        onClose={() => setIsProductModalOpen(false)}
+        onSubmit={handleProductSubmit}
+        initialData={editingProduct}
+        categories={categories}
+        suppliers={suppliers}
+        onScanRequest={startScanning}
+        externalSku={scannedSku}
+        products={products}
+      />
+
       {/* Scanner Modal */}
       {isScanning && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative">
             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/40">
               <h3 className="font-bold text-white flex items-center gap-2">
@@ -596,23 +852,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
             </div>
             <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
                <video ref={videoRef} className="w-full h-full object-cover" />
-               
-               {/* Pulsating Reticle */}
                <div className="absolute inset-0 m-auto w-64 h-40 border-2 border-amber-500/50 rounded-lg pointer-events-none">
-                  {/* Corner Markers */}
-                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 -mt-1 -ml-1 border-amber-500"></div>
-                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 -mt-1 -mr-1 border-amber-500"></div>
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 -mb-1 -ml-1 border-amber-500"></div>
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 -mb-1 -mr-1 border-amber-500"></div>
-                  
-                  {/* Scanning Line */}
                   <div className="absolute left-0 w-full h-0.5 bg-amber-400/80 shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-scan"></div>
                </div>
-
                {cameraError && <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-rose-400 p-4 font-bold">{cameraError}</div>}
             </div>
             <div className="p-6 text-center">
-              <p className="text-zinc-500 text-sm">Point camera at barcode.</p>
               <button onClick={stopScanning} className="mt-4 bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors">Cancel</button>
             </div>
           </div>
@@ -703,13 +948,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       <div className="glass-panel p-2 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-2 z-20 shadow-xl">
         <div className="flex bg-black/20 p-1 rounded-xl border border-white/5 w-full sm:w-auto">
            <button 
-             onClick={() => { setActiveTab('products'); setSearchTerm(''); setIsAdding(false); setEditingProduct(null); setIsAddingSupplier(false); setErrors({}); setShowFilters(false); }}
+             onClick={() => { setActiveTab('products'); setSearchTerm(''); setIsProductModalOpen(false); setEditingProduct(null); setIsAddingSupplier(false); setSupplierErrors({}); setShowFilters(false); }}
              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${activeTab === 'products' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
            >
              <Package size={16} /> Products
            </button>
            <button 
-             onClick={() => { setActiveTab('suppliers'); setSearchTerm(''); setIsAdding(false); setEditingProduct(null); setIsAddingSupplier(false); setErrors({}); setShowFilters(false); }}
+             onClick={() => { setActiveTab('suppliers'); setSearchTerm(''); setIsProductModalOpen(false); setEditingProduct(null); setIsAddingSupplier(false); setSupplierErrors({}); setShowFilters(false); }}
              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${activeTab === 'suppliers' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
            >
              <Truck size={16} /> Suppliers
@@ -752,10 +997,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                    <span className="hidden sm:inline font-bold text-sm">AI Analysis</span>
                 </button>
                 <button 
-                  onClick={() => { setIsAdding(!isAdding); setEditingProduct(null); setErrors({}); setNewName(''); setNewDesc(''); setNewPrice(''); setNewStock(''); setNewCategory(''); setNewSku(''); setNewSupplier(''); setNewImageUrl(''); }}
-                  className={`w-10 sm:w-auto bg-amber-500 hover:bg-amber-400 text-black p-2.5 sm:px-5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/20 ${isAdding ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                  onClick={() => { setIsProductModalOpen(true); setEditingProduct(null); setScannedSku(null); }}
+                  className={`w-10 sm:w-auto bg-amber-500 hover:bg-amber-400 text-black p-2.5 sm:px-5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/20`}
                 >
-                  {isAdding ? <X size={20} /> : <><Plus size={20} /><span className="hidden sm:inline font-bold text-sm">Add Item</span></>}
+                  <Plus size={20} /><span className="hidden sm:inline font-bold text-sm">Add Item</span>
                 </button>
               </div>
            ) : (
@@ -902,7 +1147,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                             }`}>
                               {item.priority} Priority
                             </span>
-                            <span className="text-xs text-zinc-400 italic truncate flex-1">{item.reason}</span>
+                            <div className="flex items-center gap-1 text-xs text-zinc-400 italic truncate flex-1">
+                                <TrendingUp size={12} className="text-violet-400" />
+                                {item.reason}
+                            </div>
                          </div>
 
                          <div className="grid grid-cols-2 gap-2 mt-1">
@@ -935,234 +1183,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                       <Check size={32} />
                     </div>
                     <p className="text-lg font-medium">Inventory levels look healthy!</p>
-                    <p className="text-sm">No immediate reorders suggested by AI.</p>
+                    <p className="text-sm">No immediate reorders suggested by AI based on current sales velocity.</p>
                  </div>
                )}
-            </div>
-          )}
-
-          {/* Add/Edit Product Form */}
-          {isAdding && (
-            <div className="glass-panel p-6 md:p-8 rounded-3xl mb-6 border border-white/10 relative overflow-hidden animate-in zoom-in-95 duration-300">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10"></div>
-              
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Package className="text-amber-500" size={20} /> 
-                  {editingProduct ? 'Edit Product Details' : 'Add New Product'}
-                </h3>
-              </div>
-
-              <form onSubmit={handleAddProduct} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">SKU / Barcode</label>
-                    <div className="flex gap-2">
-                      <div className="flex-1 relative">
-                        <input 
-                          type="text" 
-                          value={newSku}
-                          onChange={(e) => setNewSku(e.target.value)}
-                          className={getInputClass(errors.sku)}
-                          placeholder="Scan or enter SKU"
-                        />
-                         {errors.sku && <p className="text-xs text-rose-400 mt-1 ml-1 absolute -bottom-5">{errors.sku}</p>}
-                      </div>
-                      <button type="button" onClick={startScanning} className="bg-white/5 border border-white/10 hover:bg-white/10 text-amber-500 px-4 rounded-xl transition-colors">
-                        <Camera size={20} />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Product Name *</label>
-                    <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          value={newName}
-                          onChange={(e) => setNewName(e.target.value)}
-                          className={getInputClass(errors.name)}
-                          placeholder="e.g. Wireless Headphones"
-                        />
-                        <button 
-                          type="button"
-                          onClick={handleSmartEnhance}
-                          disabled={!newName || isEnhancing}
-                          className="bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500 hover:text-black px-4 rounded-xl flex items-center gap-2 text-sm font-bold transition-all disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {isEnhancing ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                          Auto-Fill
-                        </button>
-                    </div>
-                    {errors.name && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.name}</p>}
-                  </div>
-
-                  {/* Enhanced Image Input with Upload */}
-                  <div>
-                     <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">
-                       Product Image <span className="text-zinc-600 normal-case font-normal">(Optional)</span>
-                     </label>
-                     <div className="flex gap-3">
-                       <div className="flex-1 space-y-2">
-                         <div className="relative group">
-                           <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-amber-500 transition-colors" />
-                           <input
-                             type="text"
-                             value={newImageUrl.startsWith('data:') ? '' : newImageUrl}
-                             onChange={(e) => {
-                                 setNewImageUrl(e.target.value);
-                                 if (errors.image) setErrors(prev => ({...prev, image: ''})); // Clear error on typing
-                             }}
-                             onBlur={() => {
-                                if (newImageUrl && !newImageUrl.startsWith('data:') && !isValidUrl(newImageUrl)) {
-                                   setErrors(prev => ({...prev, image: 'Invalid URL format'}));
-                                }
-                             }}
-                             className={getInputClass(errors.image).replace('px-4', 'pl-10 pr-10')}
-                             placeholder={newImageUrl.startsWith('data:') ? "Image uploaded from device" : "https://example.com/image.jpg"}
-                             disabled={newImageUrl.startsWith('data:')}
-                           />
-                           {newImageUrl && (
-                              <button 
-                                type="button" 
-                                onClick={() => { setNewImageUrl(''); setErrors(prev => ({...prev, image: ''})); }} 
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-1"
-                              >
-                                <X size={14} />
-                              </button>
-                           )}
-                         </div>
-                         
-                         <div className="flex items-center gap-2">
-                            <div className="h-px bg-white/5 flex-1"></div>
-                            <span className="text-[10px] text-zinc-600 uppercase font-bold">OR</span>
-                            <div className="h-px bg-white/5 flex-1"></div>
-                         </div>
-
-                         <input 
-                           type="file" 
-                           ref={fileInputRef}
-                           onChange={handleImageUpload}
-                           accept="image/*"
-                           className="hidden"
-                         />
-                         <button 
-                           type="button" 
-                           onClick={() => fileInputRef.current?.click()}
-                           className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl text-xs font-bold text-zinc-300 transition-colors flex items-center justify-center gap-2"
-                         >
-                           <Upload size={14} /> Upload from Device
-                         </button>
-                       </div>
-
-                       {/* Preview Box */}
-                       <ProductThumbnail 
-                         src={isValidUrl(newImageUrl) ? newImageUrl : undefined} 
-                         alt="Preview" 
-                         size="w-24 h-24" 
-                         onError={() => {
-                            if (newImageUrl && !newImageUrl.startsWith('data:')) {
-                                setErrors(prev => ({ ...prev, image: 'Unable to load image from URL' }));
-                            }
-                         }}
-                       />
-                     </div>
-                     {errors.image && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.image}</p>}
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5 ml-1">
-                        <label className="block text-xs font-bold uppercase text-zinc-500">Detailed Description</label>
-                        <span className={`text-[10px] ${newDesc.length > 450 ? 'text-amber-500' : 'text-zinc-600'}`}>{newDesc.length}/500</span>
-                    </div>
-                    <textarea 
-                      value={newDesc}
-                      onChange={(e) => setNewDesc(e.target.value)}
-                      maxLength={500}
-                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 outline-none h-32 min-h-[80px] resize-y placeholder-zinc-500 backdrop-blur-sm transition-all"
-                      placeholder="Enter product details (ingredients, dimensions, features)..."
-                    />
-                  </div>
-                </div>
-                
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Price (₱) *</label>
-                      <input 
-                        type="number" 
-                        value={newPrice}
-                        onChange={(e) => setNewPrice(e.target.value)}
-                        className={getInputClass(errors.price)}
-                        placeholder="0.00"
-                        min="0"
-                        step="0.01"
-                      />
-                      {errors.price && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.price}</p>}
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Stock Qty *</label>
-                      <input 
-                        type="number" 
-                        value={newStock}
-                        onChange={(e) => setNewStock(e.target.value)}
-                        className={getInputClass(errors.stock)}
-                        placeholder="0"
-                        min="0"
-                        step="1"
-                      />
-                      {errors.stock && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.stock}</p>}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Supplier *</label>
-                    <div className="relative">
-                      <Truck className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
-                      <select 
-                        value={newSupplier}
-                        onChange={(e) => setNewSupplier(e.target.value)}
-                        className={getInputClass(errors.supplier).replace('px-4', 'pl-10 pr-4')}
-                      >
-                         <option value="" disabled className="text-zinc-500">Select a Supplier</option>
-                         {suppliers.map(sup => (
-                           <option key={sup.id} value={sup.name} className="bg-slate-900 text-white">{sup.name}</option>
-                         ))}
-                      </select>
-                    </div>
-                    {errors.supplier && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supplier}</p>}
-                  </div>
-
-                  <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                    <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">Category *</label>
-                    <div className="flex gap-2 flex-col">
-                      <select
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        className={getInputClass(errors.category)}
-                      >
-                        <option value="" disabled className="text-zinc-500">Select Category</option>
-                        {categories.map((cat, idx) => <option key={idx} value={cat} className="bg-slate-900 text-white">{cat}</option>)}
-                        <option value="Uncategorized" className="bg-slate-900 text-white">Uncategorized</option>
-                      </select>
-                      {errors.category && <p className="text-xs text-rose-400 ml-1">{errors.category}</p>}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-4 gap-3">
-                    <button 
-                      type="button" 
-                      onClick={() => { setIsAdding(false); setEditingProduct(null); setErrors({}); }}
-                      className="px-6 py-3.5 rounded-xl font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="flex-1 sm:flex-none bg-amber-500 hover:bg-amber-400 text-black px-8 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-amber-900/20 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2">
-                      <Save size={18} /> {editingProduct ? 'Update Product' : 'Save Product'}
-                    </button>
-                  </div>
-                </div>
-              </form>
             </div>
           )}
 
@@ -1261,7 +1284,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         <div className="flex flex-col items-center justify-center gap-4">
                           <Package size={48} strokeWidth={1} className="opacity-20" />
                           <p>No products found matching your search.</p>
-                          <button onClick={() => setIsAdding(true)} className="text-amber-500 hover:underline text-sm font-medium">Add a new product</button>
+                          <button onClick={() => setIsProductModalOpen(true)} className="text-amber-500 hover:underline text-sm font-medium">Add a new product</button>
                         </div>
                       </td>
                     </tr>
@@ -1322,10 +1345,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         type="text" 
                         value={supName}
                         onChange={(e) => setSupName(e.target.value)}
-                        className={getInputClass(errors.supName)}
+                        className={getInputClass(supplierErrors.supName)}
                         placeholder="e.g. Tech Distributor Inc."
                       />
-                      {errors.supName && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supName}</p>}
+                      {supplierErrors.supName && <p className="text-xs text-rose-400 mt-1 ml-1">{supplierErrors.supName}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Contact Person *</label>
@@ -1333,10 +1356,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         type="text" 
                         value={supContact}
                         onChange={(e) => setSupContact(e.target.value)}
-                        className={getInputClass(errors.supContact)}
+                        className={getInputClass(supplierErrors.supContact)}
                         placeholder="e.g. John Doe"
                       />
-                      {errors.supContact && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supContact}</p>}
+                      {supplierErrors.supContact && <p className="text-xs text-rose-400 mt-1 ml-1">{supplierErrors.supContact}</p>}
                     </div>
                  </div>
                  
@@ -1347,10 +1370,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         type="email" 
                         value={supEmail}
                         onChange={(e) => setSupEmail(e.target.value)}
-                        className={getInputClass(errors.supEmail)}
+                        className={getInputClass(supplierErrors.supEmail)}
                         placeholder="contact@supplier.com"
                       />
-                      {errors.supEmail && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supEmail}</p>}
+                      {supplierErrors.supEmail && <p className="text-xs text-rose-400 mt-1 ml-1">{supplierErrors.supEmail}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase text-zinc-500 mb-1.5 ml-1">Phone Number *</label>
@@ -1358,10 +1381,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         type="text" 
                         value={supPhone}
                         onChange={(e) => setSupPhone(e.target.value)}
-                        className={getInputClass(errors.supPhone)}
+                        className={getInputClass(supplierErrors.supPhone)}
                         placeholder="0917-XXX-XXXX"
                       />
-                      {errors.supPhone && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supPhone}</p>}
+                      {supplierErrors.supPhone && <p className="text-xs text-rose-400 mt-1 ml-1">{supplierErrors.supPhone}</p>}
                     </div>
                  </div>
                  
@@ -1371,16 +1394,16 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                       type="text" 
                       value={supAddress}
                       onChange={(e) => setSupAddress(e.target.value)}
-                      className={getInputClass(errors.supAddress)}
+                      className={getInputClass(supplierErrors.supAddress)}
                       placeholder="Street, City, Province"
                     />
-                    {errors.supAddress && <p className="text-xs text-rose-400 mt-1 ml-1">{errors.supAddress}</p>}
+                    {supplierErrors.supAddress && <p className="text-xs text-rose-400 mt-1 ml-1">{supplierErrors.supAddress}</p>}
                  </div>
 
                  <div className="flex justify-end pt-2 gap-3">
                     <button 
                       type="button" 
-                      onClick={() => { setIsAddingSupplier(false); setEditingSupplier(null); setErrors({}); }}
+                      onClick={() => { setIsAddingSupplier(false); setEditingSupplier(null); setSupplierErrors({}); }}
                       className="px-6 py-3 rounded-xl font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
                     >
                       Cancel

@@ -11,6 +11,7 @@ import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
 import { Settings } from './components/Settings';
+import { SystemTutorial } from './components/SystemTutorial';
 import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier } from './types';
 
 const App: React.FC = () => {
@@ -21,6 +22,7 @@ const App: React.FC = () => {
   const STORAGE_KEY_PRODUCTS = 'automate_products';
   const STORAGE_KEY_SUPPLIERS = 'automate_suppliers';
   const STORAGE_KEY_TRANSACTIONS = 'automate_transactions';
+  const STORAGE_KEY_TUTORIAL = 'automate_tutorial_seen';
 
   // --- Helper: Safe JSON Parsing ---
   const safeJsonParse = <T,>(key: string, fallback: T): T => {
@@ -41,6 +43,7 @@ const App: React.FC = () => {
   );
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
+  const [showTutorial, setShowTutorial] = useState(false);
   const userRole = UserRole.ADMIN_PRO; // Configurable role for demo
 
   // Business Data
@@ -105,6 +108,16 @@ const App: React.FC = () => {
     }
   }, [isSetupComplete, businessName, categories, products, suppliers, transactions]);
 
+  // Check and trigger tutorial
+  useEffect(() => {
+    if (isAuthenticated && isSetupComplete) {
+      const seen = localStorage.getItem(STORAGE_KEY_TUTORIAL);
+      if (!seen) {
+        setShowTutorial(true);
+      }
+    }
+  }, [isAuthenticated, isSetupComplete]);
+
   // --- Handlers ---
 
   const handleOnboardingComplete = useCallback((data: OnboardingState) => {
@@ -156,6 +169,11 @@ const App: React.FC = () => {
 
   const handleLogin = useCallback(() => setIsAuthenticated(true), []);
   const handleLogout = useCallback(() => setIsAuthenticated(false), []);
+
+  const handleCloseTutorial = () => {
+    localStorage.setItem(STORAGE_KEY_TUTORIAL, 'true');
+    setShowTutorial(false);
+  };
 
   // --- Render Logic ---
 
@@ -226,6 +244,7 @@ const App: React.FC = () => {
       >
         {renderContent()}
       </Layout>
+      {showTutorial && <SystemTutorial onClose={handleCloseTutorial} />}
     </RoleShell>
   );
 };

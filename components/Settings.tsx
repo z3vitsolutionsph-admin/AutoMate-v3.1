@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Link2, RefreshCw, CheckCircle2, XCircle, Activity, FileText, Globe, Shield, Github } from 'lucide-react';
+import { Settings as SettingsIcon, Link2, RefreshCw, CheckCircle2, XCircle, Activity, FileText, Globe, Shield, Github, AlertTriangle } from 'lucide-react';
 import { IntegrationConfig, SyncLog } from '../types';
 
 export const Settings: React.FC = () => {
@@ -49,6 +49,54 @@ export const Settings: React.FC = () => {
         }
       }, 2000);
     }
+  };
+
+  const handleManualSync = (id: string) => {
+    const integration = integrations.find(i => i.id === id);
+    if (!integration || (integration.status !== 'CONNECTED' && integration.status !== 'SYNCING')) return;
+
+    // Set status to syncing
+    setIntegrations(prev => prev.map(int => 
+      int.id === id ? { ...int, status: 'SYNCING' } : int
+    ));
+
+    // Simulate API Call with Error Handling
+    setTimeout(() => {
+      // Simulate a random error chance (30%)
+      const shouldFail = Math.random() < 0.3; 
+      
+      if (shouldFail) {
+        // Handle Error
+        setIntegrations(prev => prev.map(int => 
+          int.id === id ? { ...int, status: 'CONNECTED' } : int
+        ));
+
+        const errorLog: SyncLog = {
+          id: Date.now().toString(),
+          provider: integration.provider,
+          action: 'Manual Data Sync',
+          status: 'FAILURE',
+          timestamp: new Date(),
+          details: 'Connection Timed Out: Upstream service unavailable (503).'
+        };
+        setSyncLogs(prev => [errorLog, ...prev]);
+      } else {
+        // Handle Success
+        setIntegrations(prev => prev.map(int => 
+          int.id === id ? { ...int, status: 'CONNECTED', lastSync: new Date() } : int
+        ));
+
+        const successLog: SyncLog = {
+          id: Date.now().toString(),
+          provider: integration.provider,
+          action: 'Manual Data Sync',
+          status: 'SUCCESS',
+          timestamp: new Date(),
+          details: 'Successfully synchronized recent data changes.'
+        };
+        setSyncLogs(prev => [successLog, ...prev]);
+      }
+    }, 2000);
   };
 
   return (
@@ -121,7 +169,17 @@ export const Settings: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-3">
-                     <button className="text-slate-400 hover:text-white p-2 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors" title="Settings">
+                     {(integration.status === 'CONNECTED' || integration.status === 'SYNCING') && (
+                        <button 
+                          onClick={() => handleManualSync(integration.id)}
+                          disabled={integration.status === 'SYNCING'}
+                          className={`text-slate-300 hover:text-white p-2.5 rounded-lg border border-slate-700 transition-colors bg-slate-900 ${integration.status === 'SYNCING' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`} 
+                          title="Sync Now"
+                        >
+                          <RefreshCw size={18} className={integration.status === 'SYNCING' ? 'animate-spin' : ''} />
+                        </button>
+                     )}
+                     <button className="text-slate-400 hover:text-white p-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors" title="Configure">
                        <SettingsIcon size={18} />
                      </button>
                      <button 
@@ -149,16 +207,23 @@ export const Settings: React.FC = () => {
               <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Activity size={16} className="text-cyan-400" /> Sync Logs
               </h3>
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {syncLogs.length === 0 && (
+                   <p className="text-xs text-slate-500 text-center py-4">No recent sync activity.</p>
+                )}
                 {syncLogs.map(log => (
-                  <div key={log.id} className="flex gap-3 text-sm pb-3 border-b border-slate-800 last:border-0">
-                    <div className={`mt-1 ${log.status === 'SUCCESS' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {log.status === 'SUCCESS' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                  <div key={log.id} className="flex gap-3 text-sm pb-3 border-b border-slate-800 last:border-0 animate-in fade-in slide-in-from-right-2 duration-300">
+                    <div className={`mt-1 flex-shrink-0 ${log.status === 'SUCCESS' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {log.status === 'SUCCESS' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-300">{log.action}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-slate-300 truncate">{log.action}</div>
                       <div className="text-xs text-slate-500 mt-0.5">{log.provider} • {log.timestamp.toLocaleTimeString()}</div>
-                      <div className="text-xs text-slate-400 mt-1 bg-slate-950 p-1.5 rounded border border-slate-800 font-mono">
+                      <div className={`text-xs mt-2 p-2 rounded border font-mono break-words ${
+                          log.status === 'FAILURE' 
+                            ? 'bg-rose-950/30 border-rose-900/50 text-rose-300' 
+                            : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}>
                         {log.details}
                       </div>
                     </div>
