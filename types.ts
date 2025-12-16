@@ -4,38 +4,45 @@ export enum ViewState {
   INVENTORY = 'INVENTORY',
   POS = 'POS',
   REPORTING = 'REPORTING',
+  CUSTOMERS = 'CUSTOMERS',
   PROMOTER = 'PROMOTER',
   SUPPORT = 'SUPPORT',
   SETTINGS = 'SETTINGS'
 }
 
 export enum UserRole {
-  SUPERUSER = 'SUPERUSER',
-  ADMIN = 'ADMIN',
-  ADMIN_PRO = 'ADMIN_PRO',
-  PROMOTER = 'PROMOTER',
-  EMPLOYEE = 'EMPLOYEE'
+  ADMIN = 'Admin',
+  CASHIER = 'Cashier',
+  PROMOTER = 'Promoter',
 }
 
 export interface Product {
-  id: string;
+  id: string; // uuid
   name: string;
   sku: string;
-  category: string;
+  category_id: string; // Foreign key to categories table
   price: number;
   stock: number;
   description?: string;
-  supplier?: string; 
-  imageUrl?: string;
+  supplier_id?: string; // Foreign key to suppliers table
+  image_url?: string;
+  created_at: string; // timestamp
+}
+
+export interface Category {
+  id: string; // uuid
+  name: string;
+  created_at: string; // timestamp
 }
 
 export interface Supplier {
-  id: string;
+  id: string; // uuid
   name: string;
-  contactPerson: string;
+  contact_person: string;
   email: string;
   phone: string;
   address: string;
+  created_at: string; // timestamp
 }
 
 export interface CartItem extends Product {
@@ -43,15 +50,30 @@ export interface CartItem extends Product {
 }
 
 export interface Transaction {
-  id: string;
-  date: string; // Format: YYYY-MM-DD
-  product: string;
-  category: string;
-  location: string;
-  amount: number;
+  id: string; // uuid
+  created_at: string; // timestamp
+  product_id: string; // Foreign key to products table
+  quantity: number;
+  total_amount: number;
+  payment_method: 'Cash' | 'GCash' | 'PayMaya' | 'QRPH' | 'Card';
+  user_id: string; // Foreign key to users table
   status: 'Completed' | 'Processing' | 'Refunded';
-  quantity?: number;
-  paymentMethod?: 'Cash' | 'GCash' | 'PayMaya' | 'QRPH' | 'Card';
+}
+
+export interface Customer {
+    id: string; // uuid
+    name: string;
+    email?: string;
+    phone?: string;
+    created_at: string; // timestamp
+}
+
+export interface LoyaltyPoint {
+    id: string; // uuid
+    customer_id: string; // Foreign key to customers table
+    points: number;
+    transaction_id: string; // Foreign key to transactions table
+    created_at: string; // timestamp
 }
 
 export interface ReorderSuggestion {
@@ -74,47 +96,4 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: Date;
-}
-
-// Onboarding Types
-export interface OnboardingState {
-  currentStep: number;
-  isComplete: boolean;
-  selectedPlan: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM' | null;
-  businessName: string;
-  businessType: string;
-  generatedCategories: string[];
-  gates: {
-    employeeSet: boolean;
-    categorySet: boolean; 
-    inventorySet: boolean;
-  };
-}
-
-export interface SubscriptionPlan {
-  id: string;
-  name: string;
-  price: number;
-  features: string[];
-  recommended?: boolean;
-  color: string;
-}
-
-// Accounting & Integration Types
-export interface IntegrationConfig {
-  id: string;
-  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB';
-  name: string;
-  status: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
-  lastSync?: Date;
-  autoSync: boolean;
-}
-
-export interface SyncLog {
-  id: string;
-  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB';
-  action: string;
-  status: 'SUCCESS' | 'FAILURE';
-  timestamp: Date;
-  details: string;
 }

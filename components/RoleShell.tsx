@@ -4,13 +4,21 @@ import { UserRole } from '../types';
 interface RoleShellProps {
   role: UserRole;
   children: React.ReactNode;
+  loading: boolean;
 }
 
-export const RoleShell: React.FC<RoleShellProps> = ({ role, children }) => {
+export const RoleShell: React.FC<RoleShellProps> = ({ role, children, loading }) => {
   // Determine background based on role
   const renderBackground = () => {
+    if (loading) {
+      return (
+        <div className="fixed inset-0 z-[-1] bg-slate-950 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-amber-500"></div>
+        </div>
+      );
+    }
     switch (role) {
-      case UserRole.SUPERUSER:
+      case UserRole.ADMIN:
         return (
           <div className="fixed inset-0 z-[-1] bg-slate-950 overflow-hidden">
              {/* Network / Futuristic Theme */}

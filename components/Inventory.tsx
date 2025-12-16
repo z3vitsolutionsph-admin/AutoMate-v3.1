@@ -1,15 +1,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Camera, Loader2, Truck, Check, Wand2, Building2, Phone, Mail, MapPin, UserSquare2, Pencil, Trash2, Brain, ArrowRight, AlertTriangle, Image as ImageIcon, CheckSquare, Square, Layers, Edit3, Save, ShoppingCart, Filter, Upload, Link as LinkIcon, RefreshCw, ChevronDown } from 'lucide-react';
-import { Product, Supplier, Transaction, ReorderSuggestion } from '../types';
+import { Product, Supplier, Transaction, ReorderSuggestion, Category } from '../types';
 import { formatCurrency } from '../constants';
 import { enhanceProductDetails, analyzeStockLevels } from '../services/geminiService';
+import { addProduct, updateProduct, deleteProduct, addSupplier, updateSupplier, deleteSupplier } from '../services/api';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 interface InventoryProps {
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
-  categories: string[];
+  categories: Category[];
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
   transactions: Transaction[];
@@ -144,12 +145,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   // Filtered Lists
   const filteredProducts = products.filter(p => {
+    const category = categories.find(c => c.id === p.category_id);
     const matchesSearch = 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (category && category.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       p.sku.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesCategory = filterCategory === 'All' || p.category === filterCategory;
+    const matchesCategory = filterCategory === 'All' || (category && category.name === filterCategory);
 
     let matchesStock = true;
     if (stockFilterType === 'below') {
@@ -211,11 +213,16 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setSelectedIds(newSelected);
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (window.confirm(`Are you sure you want to delete ${selectedIds.size} selected products? This action cannot be undone.`)) {
-      setProducts(prev => prev.filter(p => !selectedIds.has(p.id)));
-      setSelectedIds(new Set());
-      setScanSuccess(`${selectedIds.size} products deleted successfully.`);
+      try {
+        await Promise.all(Array.from(selectedIds).map(id => deleteProduct(id)));
+        setProducts(prev => prev.filter(p => !selectedIds.has(p.id)));
+        setSelectedIds(new Set());
+        setScanSuccess(`${selectedIds.size} products deleted successfully.`);
+      } catch (error) {
+        setGeneralError('Failed to delete products. Please try again.');
+      }
     }
   };
 
@@ -387,53 +394,59 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   };
 
   const openEditProduct = (p: Product) => {
+    const supplier = suppliers.find(s => s.id === p.supplier_id);
+    const category = categories.find(c => c.id === p.category_id);
     setEditingProduct(p);
     setNewName(p.name);
     setNewDesc(p.description || '');
     setNewPrice(p.price.toString());
     setNewStock(p.stock.toString());
-    setNewCategory(p.category);
-    setNewSupplier(p.supplier || '');
+    setNewCategory(category ? category.id : '');
+    setNewSupplier(supplier ? supplier.id : '');
     setNewSku(p.sku);
-    setNewImageUrl(p.imageUrl || '');
+    setNewImageUrl(p.image_url || '');
     setErrors({});
     setIsAdding(true);
   };
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateProductForm()) {
       setGeneralError("Please fix the errors before saving.");
       return;
     }
 
-    if (editingProduct) {
-       setProducts(prev => prev.map(p => p.id === editingProduct.id ? {
-         ...p,
-         name: newName,
-         description: newDesc,
-         price: parseFloat(newPrice),
-         stock: parseInt(newStock),
-         category: newCategory,
-         supplier: newSupplier,
-         sku: newSku,
-         imageUrl: newImageUrl
-       } : p));
-       setScanSuccess('Product updated successfully');
-    } else {
-       const newProduct: Product = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: newName,
-        description: newDesc,
-        price: parseFloat(newPrice),
-        stock: parseInt(newStock),
-        category: newCategory || 'Uncategorized',
-        supplier: newSupplier || 'Default Supplier',
-        sku: newSku,
-        imageUrl: newImageUrl
-      };
-      setProducts([...products, newProduct]);
-      setScanSuccess('Product added successfully');
+    try {
+      if (editingProduct) {
+        const updatedProduct = await updateProduct({
+          ...editingProduct,
+          name: newName,
+          description: newDesc,
+          price: parseFloat(newPrice),
+          stock: parseInt(newStock),
+          category_id: newCategory,
+          supplier_id: newSupplier,
+          sku: newSku,
+          image_url: newImageUrl,
+        });
+        setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+        setScanSuccess('Product updated successfully');
+      } else {
+        const newProduct = await addProduct({
+          name: newName,
+          description: newDesc,
+          price: parseFloat(newPrice),
+          stock: parseInt(newStock),
+          category_id: newCategory,
+          supplier_id: newSupplier,
+          sku: newSku,
+          image_url: newImageUrl,
+        });
+        setProducts(prev => [...prev, newProduct]);
+        setScanSuccess('Product added successfully');
+      }
+    } catch (error) {
+      setGeneralError('Failed to save product. Please try again.');
     }
 
     setIsAdding(false);
@@ -498,39 +511,38 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSaveSupplier = (e: React.FormEvent) => {
+  const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateSupplierForm()) {
         setGeneralError("Please fix the errors before saving.");
         return;
     }
 
-    if (editingSupplier) {
-        const oldName = editingSupplier.name;
-        setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? {
-            ...s,
-            name: supName,
-            contactPerson: supContact,
-            email: supEmail,
-            phone: supPhone,
-            address: supAddress
-        } : s));
-
-        if (oldName !== supName) {
-            setProducts(prev => prev.map(p => p.supplier === oldName ? { ...p, supplier: supName } : p));
-        }
+    try {
+      if (editingSupplier) {
+        const updatedSupplier = await updateSupplier({
+          ...editingSupplier,
+          name: supName,
+          contact_person: supContact,
+          email: supEmail,
+          phone: supPhone,
+          address: supAddress,
+        });
+        setSuppliers(prev => prev.map(s => s.id === updatedSupplier.id ? updatedSupplier : s));
         setScanSuccess('Supplier details updated');
-    } else {
-        const newSup: Supplier = {
-            id: `SUP-${Date.now()}`,
-            name: supName,
-            contactPerson: supContact,
-            email: supEmail,
-            phone: supPhone,
-            address: supAddress
-        };
-        setSuppliers([...suppliers, newSup]);
+      } else {
+        const newSup = await addSupplier({
+          name: supName,
+          contact_person: supContact,
+          email: supEmail,
+          phone: supPhone,
+          address: supAddress,
+        });
+        setSuppliers(prev => [...prev, newSup]);
         setScanSuccess('New supplier added');
+      }
+    } catch (error) {
+      setGeneralError('Failed to save supplier. Please try again.');
     }
     
     setIsAddingSupplier(false);
@@ -539,16 +551,21 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     setErrors({});
   };
 
-  const handleDeleteSupplier = (id: string, name: string) => {
-      const linkedProducts = products.filter(p => p.supplier === name);
-      if (linkedProducts.length > 0) {
-          setGeneralError(`Cannot delete "${name}". Please reassign its ${linkedProducts.length} linked product(s) first.`);
-          return;
+  const handleDeleteSupplier = async (id: string, name: string) => {
+    const linkedProducts = products.filter(p => p.supplier_id === id);
+    if (linkedProducts.length > 0) {
+      setGeneralError(`Cannot delete "${name}". Please reassign its ${linkedProducts.length} linked product(s) first.`);
+      return;
+    }
+    if (window.confirm(`Delete supplier "${name}"?`)) {
+      try {
+        await deleteSupplier(id);
+        setSuppliers(prev => prev.filter(s => s.id !== id));
+        setScanSuccess('Supplier deleted');
+      } catch (error) {
+        setGeneralError('Failed to delete supplier. Please try again.');
       }
-      if (window.confirm(`Delete supplier "${name}"?`)) {
-          setSuppliers(prev => prev.filter(s => s.id !== id));
-          setScanSuccess('Supplier deleted');
-      }
+    }
   };
 
   const handleRestockFromSuggestion = (suggestion: ReorderSuggestion) => {
@@ -785,10 +802,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500/50 outline-none"
                 >
                    <option value="All">All Categories</option>
-                   {categories.map((cat, idx) => (
-                      <option key={idx} value={cat} className="bg-slate-900 text-white">{cat}</option>
+                   {categories.map((cat) => (
+                      <option key={cat.id} value={cat.name} className="bg-slate-900 text-white">{cat.name}</option>
                    ))}
-                   <option value="Uncategorized" className="bg-slate-900 text-white">Uncategorized</option>
                 </select>
              </div>
 
@@ -1126,7 +1142,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                       >
                          <option value="" disabled className="text-zinc-500">Select a Supplier</option>
                          {suppliers.map(sup => (
-                           <option key={sup.id} value={sup.name} className="bg-slate-900 text-white">{sup.name}</option>
+                           <option key={sup.id} value={sup.id} className="bg-slate-900 text-white">{sup.name}</option>
                          ))}
                       </select>
                     </div>
@@ -1142,8 +1158,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                         className={getInputClass(errors.category)}
                       >
                         <option value="" disabled className="text-zinc-500">Select Category</option>
-                        {categories.map((cat, idx) => <option key={idx} value={cat} className="bg-slate-900 text-white">{cat}</option>)}
-                        <option value="Uncategorized" className="bg-slate-900 text-white">Uncategorized</option>
+                        {categories.map((cat) => <option key={cat.id} value={cat.id} className="bg-slate-900 text-white">{cat.name}</option>)}
                       </select>
                       {errors.category && <p className="text-xs text-rose-400 ml-1">{errors.category}</p>}
                     </div>
@@ -1215,14 +1230,18 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                           <span className="font-mono text-xs text-zinc-400">{product.sku}</span>
                         </td>
                         <td className="p-4">
-                          <span className="bg-white/5 text-zinc-300 px-2.5 py-1 rounded-full text-xs font-medium border border-white/5">{product.category}</span>
+                          <span className="bg-white/5 text-zinc-300 px-2.5 py-1 rounded-full text-xs font-medium border border-white/5">
+                            {categories.find(c => c.id === product.category_id)?.name || 'Uncategorized'}
+                          </span>
                         </td>
                         <td className="p-4 text-zinc-400">
                           <div className="flex items-center gap-2">
-                            {product.supplier ? (
+                            {product.supplier_id ? (
                               <>
                                 <Truck size={14} className="opacity-50" /> 
-                                <span className="truncate max-w-[150px]" title={product.supplier}>{product.supplier}</span>
+                                <span className="truncate max-w-[150px]" title={suppliers.find(s => s.id === product.supplier_id)?.name}>
+                                  {suppliers.find(s => s.id === product.supplier_id)?.name || 'Unknown Supplier'}
+                                </span>
                               </>
                             ) : (
                               <span className="text-zinc-600 italic">N/A</span>

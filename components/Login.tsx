@@ -1,32 +1,37 @@
 import React, { useState } from 'react';
+import { supabase } from '../services/supabase';
 import { Lock, Mail, ArrowRight, AlertCircle, User, KeyRound, Box, Store, Bot, BarChart3 } from 'lucide-react';
 import { Logo } from './Logo';
 
 interface LoginProps {
-  onLogin: () => void;
   businessName?: string;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, businessName }) => {
+export const Login: React.FC<LoginProps> = ({ businessName }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-    
-    setTimeout(() => {
-      if (!email || !password) {
-         setIsLoading(false);
-         setError("Please enter valid credentials.");
-         return;
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        setError(error.message);
       }
+    } catch (error) {
+      setError('An unexpected error occurred.');
+    } finally {
       setIsLoading(false);
-      onLogin();
-    }, 1000);
+    }
   };
 
   return (

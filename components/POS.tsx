@@ -1,12 +1,16 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Printer, ScanBarcode, X, Camera, Ban, Percent, Settings, AlertCircle, Check, ShoppingBag, ArrowLeft, Save, MapPin, Phone, MessageSquare, Store, RotateCcw, Smartphone, AlertTriangle, ChefHat, Filter, ChevronDown } from 'lucide-react';
-import { Product, CartItem, Transaction } from '../types';
+import { Product, CartItem, Transaction, Category, Supplier } from '../types';
 import { formatCurrency } from '../constants';
+import { addTransaction } from '../services/api';
+import { supabase } from '../services/supabase';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 interface POSProps {
   products: Product[];
+  categories: Category[];
+  suppliers: Supplier[];
   onTransactionComplete: (transactions: Transaction[]) => void;
 }
 
@@ -36,7 +40,7 @@ const playBeep = () => {
   }
 };
 
-export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => {
+export const POS: React.FC<POSProps> = ({ products, categories, suppliers, onTransactionComplete }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -65,14 +69,13 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
   const lastScannedCode = useRef<string | null>(null);
   const lastScanTime = useRef<number>(0);
 
-  // Derived Filters
   const uniqueCategories = useMemo(() => 
-    ['All', ...Array.from(new Set(products.map(p => p.category))).sort()], 
-  [products]);
+    ['All', ...Array.from(new Set(categories.map(c => c.name))).sort()],
+  [categories]);
 
   const uniqueSuppliers = useMemo(() => 
-    ['All', ...Array.from(new Set(products.map(p => p.supplier || 'N/A'))).sort()], 
-  [products]);
+    ['All', ...Array.from(new Set(suppliers.map(s => s.name))).sort()],
+  [suppliers]);
 
   const addToCart = (product: Product) => {
     if (product.stock <= 0) return;
@@ -189,22 +192,31 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
     setIsScanning(false);
   };
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = async () => {
     setShowPaymentModal(false);
     setShowSuccessModal(true);
     
-    const newTransactions: Transaction[] = cart.map((item, idx) => ({
-      id: `TRX-${Date.now()}-${idx}`,
-      date: new Date().toISOString().split('T')[0],
-      product: item.name,
-      category: item.category,
-      location: 'Main Store',
-      amount: item.price * item.quantity,
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      // Handle case where user is not logged in
+      return;
+    }
+
+    const newTransactions: Omit<Transaction, 'id' | 'created_at'>[] = cart.map((item, idx) => ({
+      product_id: item.id,
       quantity: item.quantity,
-      status: 'Completed'
+      total_amount: item.price * item.quantity,
+      payment_method: selectedPayment === 'cash' ? 'Cash' : selectedPayment === 'card' ? 'Card' : selectedPayment === 'ewallet' ? 'PayMaya' : 'GCash',
+      user_id: user.id,
     }));
     
-    onTransactionComplete(newTransactions);
+    try {
+      const addedTransactions = await Promise.all(newTransactions.map(t => addTransaction(t)));
+      onTransactionComplete(addedTransactions);
+    } catch (error) {
+      console.error('Failed to process payment:', error);
+      // Optionally show an error message to the user
+    }
   };
 
   const handleFinalize = () => {
@@ -216,8 +228,10 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           p.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
-    const matchesSupplier = selectedSupplier === 'All' || p.supplier === selectedSupplier;
+    const category = categories.find(c => c.id === p.category_id);
+    const supplier = suppliers.find(s => s.id === p.supplier_id);
+    const matchesCategory = selectedCategory === 'All' || (category && category.name === selectedCategory);
+    const matchesSupplier = selectedSupplier === 'All' || (supplier && supplier.name === selectedSupplier);
 
     return matchesSearch && matchesCategory && matchesSupplier;
   });

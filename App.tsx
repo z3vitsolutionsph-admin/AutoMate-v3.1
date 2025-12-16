@@ -10,123 +10,131 @@ import { POS } from './components/POS';
 import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
+import { supabase } from './services/supabase';
+import { getProducts, getCategories, getSuppliers, getTransactions, getCustomers, addCustomer, getLoyaltyPoints } from './services/api';
+import { mockProducts, mockCategories, mockSuppliers, mockTransactions, mockCustomers, mockLoyaltyPoints } from './services/mockData';
 import { Settings } from './components/Settings';
-import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier } from './types';
+import { Customers } from './components/Customers';
+import { ViewState, UserRole, Product, Transaction, Supplier, Category, Customer, LoyaltyPoint } from './types';
 
 const App: React.FC = () => {
-  // --- Constants & Storage Keys ---
-  const STORAGE_KEY_SETUP = 'automate_is_setup';
-  const STORAGE_KEY_BIZ_NAME = 'automate_biz_name';
-  const STORAGE_KEY_CATS = 'automate_categories';
-  const STORAGE_KEY_PRODUCTS = 'automate_products';
-  const STORAGE_KEY_SUPPLIERS = 'automate_suppliers';
-  const STORAGE_KEY_TRANSACTIONS = 'automate_transactions';
-
-  // --- Helper: Safe JSON Parsing ---
-  const safeJsonParse = <T,>(key: string, fallback: T): T => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : fallback;
-    } catch (error) {
-      console.warn(`Data recovery: Resetting ${key} to default.`);
-      return fallback;
-    }
-  };
-
   // --- State Initialization ---
   
   // System State
-  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => 
-    localStorage.getItem(STORAGE_KEY_SETUP) === 'true'
-  );
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(true); // Assuming setup is complete for now
+  const [session, setSession] = useState<any>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-  const userRole = UserRole.ADMIN_PRO; // Configurable role for demo
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Business Data
-  const [businessName, setBusinessName] = useState<string>(() => 
-    localStorage.getItem(STORAGE_KEY_BIZ_NAME) || 'AutoMateSystem Store'
-  );
-  
-  const [categories, setCategories] = useState<string[]>(() => 
-    safeJsonParse<string[]>(STORAGE_KEY_CATS, ['General', 'Electronics', 'Food & Beverage', 'Services'])
-  );
-
-  const [products, setProducts] = useState<Product[]>(() => 
-    safeJsonParse<Product[]>(STORAGE_KEY_PRODUCTS, [
-      { id: '1', name: 'Signature Coffee Blend', sku: 'BVG-001', category: 'Food & Beverage', price: 180, stock: 50, supplier: 'BeanSource Inc', description: 'Premium arabica dark roast' },
-      { id: '2', name: 'Wireless POS Terminal', sku: 'EQP-102', category: 'Electronics', price: 12500, stock: 5, supplier: 'TechSolutions Ltd', description: 'Handheld payment device' },
-      { id: '3', name: 'Thermal Receipt Paper', sku: 'SUP-203', category: 'General', price: 45, stock: 200, supplier: 'Office Depot', description: '80mm x 80m rolls' },
-      { id: '4', name: 'Maintenance Service', sku: 'SRV-004', category: 'Services', price: 1500, stock: 999, supplier: 'Internal', description: 'Monthly system checkup' }
-    ])
-  );
-
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => 
-    safeJsonParse<Supplier[]>(STORAGE_KEY_SUPPLIERS, [
-      { id: '1', name: 'BeanSource Inc', contactPerson: 'Jim Bean', email: 'orders@beansource.com', phone: '0917-555-0001', address: 'BGC, Taguig City' },
-      { id: '2', name: 'TechSolutions Ltd', contactPerson: 'Sarah Tech', email: 'support@techsol.ph', phone: '0918-123-4567', address: 'Ortigas Center, Pasig' },
-      { id: '3', name: 'Office Depot', contactPerson: 'Sales Dept', email: 'b2b@officedepot.ph', phone: '02-8888-7777', address: 'Makati Ave, Makati' }
-    ])
-  );
-  
-  const [transactions, setTransactions] = useState<Transaction[]>(() => 
-    safeJsonParse<Transaction[]>(STORAGE_KEY_TRANSACTIONS, [])
-  );
+  const [businessName, setBusinessName] = useState<string>('AutoMateSystem Store');
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loyaltyPoints, setLoyaltyPoints] = useState<LoyaltyPoint[]>([]);
 
   // --- Effects ---
 
-  // Auto-redirect logic based on setup status
   useEffect(() => {
-    if (isSetupComplete) {
-       // Setup is done, require login.
-       setIsAuthenticated(false); 
-    }
-  }, [isSetupComplete]);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        // Fetch user role from the database
+        const fetchUserRole = async () => {
+          const { data, error } = await supabase
+            .from('users')
+            .select('role:roles(name)')
+            .eq('id', session.user.id)
+            .single();
 
-  // Data Persistence Effect
+          if (data && 'name' in data.role) {
+            setUserRole(data.role.name as UserRole);
+          } else {
+            console.error('Error fetching user role:', error);
+          }
+        };
+        fetchUserRole();
+      } else {
+        setUserRole(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
-    if (isSetupComplete) {
-      const dataToSave = {
-        [STORAGE_KEY_SETUP]: 'true',
-        [STORAGE_KEY_BIZ_NAME]: businessName,
-        [STORAGE_KEY_CATS]: JSON.stringify(categories),
-        [STORAGE_KEY_PRODUCTS]: JSON.stringify(products),
-        [STORAGE_KEY_SUPPLIERS]: JSON.stringify(suppliers),
-        [STORAGE_KEY_TRANSACTIONS]: JSON.stringify(transactions)
+    if (session) {
+      const fetchData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          if (userRole === UserRole.PROMOTER) {
+            setProducts(mockProducts);
+            setCategories(mockCategories);
+            setSuppliers(mockSuppliers);
+            setTransactions(mockTransactions);
+            setCustomers(mockCustomers);
+            setLoyaltyPoints(mockLoyaltyPoints);
+          } else {
+            const [productsData, categoriesData, suppliersData, transactionsData, customersData, loyaltyPointsData] = await Promise.all([
+              getProducts(),
+              getCategories(),
+              getSuppliers(),
+              getTransactions(),
+              getCustomers(),
+              getLoyaltyPoints(),
+            ]);
+            setProducts(productsData);
+            setCategories(categoriesData);
+            setSuppliers(suppliersData);
+            setTransactions(transactionsData);
+            setCustomers(customersData);
+            setLoyaltyPoints(loyaltyPointsData);
+          }
+        } catch (error) {
+          setError('Failed to fetch data. Please try again later.');
+          console.error(error);
+        } finally {
+          setLoading(false);
+        }
       };
 
-      Object.entries(dataToSave).forEach(([key, value]) => {
-        try {
-          localStorage.setItem(key, value);
-        } catch (e) {
-          console.error(`Failed to save ${key}`, e);
-        }
-      });
+      fetchData();
     }
-  }, [isSetupComplete, businessName, categories, products, suppliers, transactions]);
+  }, [session, userRole]);
 
   // --- Handlers ---
 
-  const handleOnboardingComplete = useCallback((data: OnboardingState) => {
-    setBusinessName(data.businessName);
-    setCategories(data.generatedCategories);
+  // const handleOnboardingComplete = useCallback((data: OnboardingState) => {
+  //   setBusinessName(data.businessName);
+  //   setCategories(data.generatedCategories);
 
-    // Generate specific starter products based on business type
-    const starterProducts: Product[] = data.generatedCategories.slice(0, 3).map((cat, idx) => ({
-      id: `INIT-${idx + 100}`,
-      name: `Starter ${cat} Item`,
-      sku: `START-00${idx + 1}`,
-      category: cat,
-      price: (idx + 1) * 500,
-      stock: 20 * (idx + 1),
-      description: 'Automatically generated starter item.',
-      supplier: 'Initial Setup'
-    }));
+  //   // Generate specific starter products based on business type
+  //   const starterProducts: Product[] = data.generatedCategories.slice(0, 3).map((cat, idx) => ({
+  //     id: `INIT-${idx + 100}`,
+  //     name: `Starter ${cat} Item`,
+  //     sku: `START-00${idx + 1}`,
+  //     category: cat,
+  //     price: (idx + 1) * 500,
+  //     stock: 20 * (idx + 1),
+  //     description: 'Automatically generated starter item.',
+  //     supplier: 'Initial Setup'
+  //   }));
 
-    setProducts(prev => [...starterProducts, ...prev]);
-    setIsSetupComplete(true);
-    setIsAuthenticated(true); // Smooth transition: Auto-login after setup
-  }, []);
+  //   setProducts(prev => [...starterProducts, ...prev]);
+  //   setIsSetupComplete(true);
+  // }, []);
+
+  const handleAddCustomer = async (customer: Omit<Customer, 'id' | 'created_at'>) => {
+    const newCustomer = await addCustomer(customer);
+    setCustomers(prev => [...prev, newCustomer]);
+  };
 
   const handleTransactionComplete = useCallback((newTransactions: Transaction[]) => {
     // 1. Record Transactions
@@ -138,14 +146,12 @@ const App: React.FC = () => {
       const soldMap = new Map<string, number>();
       
       newTransactions.forEach(tx => {
-        // Assuming 'product' in transaction matches 'name' in product list. 
-        // In a real app, use IDs for stability.
-        const currentSold = soldMap.get(tx.product) || 0;
-        soldMap.set(tx.product, currentSold + (tx.quantity || 1));
+        const currentSold = soldMap.get(tx.product_id) || 0;
+        soldMap.set(tx.product_id, currentSold + tx.quantity);
       });
 
       return prevProducts.map(p => {
-        const soldQty = soldMap.get(p.name);
+        const soldQty = soldMap.get(p.id);
         if (soldQty) {
           return { ...p, stock: Math.max(0, p.stock - soldQty) };
         }
@@ -154,8 +160,9 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const handleLogin = useCallback(() => setIsAuthenticated(true), []);
-  const handleLogout = useCallback(() => setIsAuthenticated(false), []);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   // --- Render Logic ---
 
@@ -165,7 +172,7 @@ const App: React.FC = () => {
         return (
           <Dashboard 
             transactions={transactions} 
-            products={products} 
+            products={products}
           />
         );
       case ViewState.INVENTORY:
@@ -183,6 +190,8 @@ const App: React.FC = () => {
         return (
           <POS 
             products={products} 
+            categories={categories}
+            suppliers={suppliers}
             onTransactionComplete={handleTransactionComplete} 
           />
         );
@@ -191,6 +200,14 @@ const App: React.FC = () => {
           <Reporting
             transactions={transactions}
             products={products}
+          />
+        );
+      case ViewState.CUSTOMERS:
+        return (
+          <Customers
+            customers={customers}
+            loyaltyPoints={loyaltyPoints}
+            onAddCustomer={handleAddCustomer}
           />
         );
       case ViewState.PROMOTER:
@@ -205,18 +222,33 @@ const App: React.FC = () => {
   };
 
   // 1. Onboarding Flow
-  if (!isSetupComplete) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
-  }
+  // if (!isSetupComplete) {
+  //   return <Onboarding onComplete={handleOnboardingComplete} />;
+  // }
 
   // 2. Authentication Flow
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} businessName={businessName} />;
+  if (!session) {
+    return <Login businessName={businessName} />;
   }
 
   // 3. Main Application Flow
+  if (loading || !userRole) {
+    return <RoleShell role={userRole!} loading={true} />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-950 text-white">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-rose-500 mb-4">An Error Occurred</h2>
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <RoleShell role={userRole}>
+    <RoleShell role={userRole} loading={false}>
       <Layout 
         currentView={currentView} 
         setView={setCurrentView}

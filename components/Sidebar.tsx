@@ -15,20 +15,14 @@ interface SidebarProps {
 
 // User Role Policy Configuration
 const ROLE_PERMISSIONS: Record<UserRole, ViewState[]> = {
-  [UserRole.SUPERUSER]: [
-    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
-  ],
-  [UserRole.ADMIN_PRO]: [
-    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
-  ],
   [UserRole.ADMIN]: [
-    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.SUPPORT, ViewState.SETTINGS
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.CUSTOMERS, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
+  [UserRole.CASHIER]: [
+    ViewState.POS
   ],
   [UserRole.PROMOTER]: [
-    ViewState.PROMOTER, ViewState.SUPPORT
-  ],
-  [UserRole.EMPLOYEE]: [
-    ViewState.POS, ViewState.INVENTORY, ViewState.SUPPORT
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.CUSTOMERS, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
   ]
 };
 
@@ -39,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
     { id: ViewState.INVENTORY, label: 'Inventory', icon: Package },
     { id: ViewState.POS, label: 'POS System', icon: ShoppingCart },
     { id: ViewState.REPORTING, label: 'Reporting', icon: BarChart3 },
+    { id: ViewState.CUSTOMERS, label: 'Customers', icon: Users },
     { id: ViewState.PROMOTER, label: 'Promoters', icon: Users },
     { id: ViewState.SUPPORT, label: 'Support & AI', icon: LifeBuoy },
     { id: ViewState.SETTINGS, label: 'Settings', icon: Settings },

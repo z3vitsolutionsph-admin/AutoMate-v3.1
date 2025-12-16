@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { DollarSign, Clock, Users, Flame, AlertCircle, ChefHat, ArrowUpRight, Search, Bell } from 'lucide-react';
 import { formatCurrency } from '../constants';
-import { Transaction, Product } from '../types';
+import { Transaction, Product, Category } from '../types';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -12,17 +12,17 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) => {
   
   // Calculate Metrics
-  const totalRevenue = transactions.reduce((acc, curr) => curr.status !== 'Refunded' ? acc + curr.amount : acc, 0);
-  const activeOrders = transactions.filter(t => t.status !== 'Completed' && t.status !== 'Refunded');
+  const totalRevenue = transactions.reduce((acc, curr) => acc + curr.total_amount, 0);
+  const activeOrders = transactions.filter(t => t.status === 'Processing');
   
   const popularItems = useMemo(() => {
     // Determine top 6 products by quantity sold
     const sales: Record<string, number> = {};
     transactions.forEach(t => {
-      sales[t.product] = (sales[t.product] || 0) + (t.quantity || 1);
+      sales[t.product_id] = (sales[t.product_id] || 0) + t.quantity;
     });
     return products
-      .map(p => ({ ...p, sales: sales[p.name] || 0 }))
+      .map(p => ({ ...p, sales: sales[p.id] || 0 }))
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 6);
   }, [transactions, products]);
@@ -161,22 +161,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
                <button className="flex-1 py-2 text-xs font-bold text-zinc-500 hover:text-white">Completed</button>
              </div>
 
-             {activeOrders.length > 0 ? activeOrders.slice(0, 6).map(order => (
-               <div key={order.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-[#27272a] transition-colors group cursor-pointer">
-                  <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-xs group-hover:bg-amber-500 group-hover:text-black transition-colors">
-                        {order.quantity}x
-                     </div>
-                     <div>
-                        <h4 className="text-white font-bold text-sm">{order.product}</h4>
-                        <p className="text-zinc-500 text-xs">Table 4 • {order.id.slice(-4)}</p>
-                     </div>
-                  </div>
-                  <span className="text-xs font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
-                     Cooking
-                  </span>
-               </div>
-             )) : (
+             {activeOrders.length > 0 ? activeOrders.slice(0, 6).map(order => {
+               const product = products.find(p => p.id === order.product_id);
+               return (
+                 <div key={order.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-[#27272a] transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-xs group-hover:bg-amber-500 group-hover:text-black transition-colors">
+                          {order.quantity}x
+                       </div>
+                       <div>
+                          <h4 className="text-white font-bold text-sm">{product?.name || 'Unknown Product'}</h4>
+                          <p className="text-zinc-500 text-xs">Table 4 • {order.id.slice(-4)}</p>
+                       </div>
+                    </div>
+                    <span className="text-xs font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
+                       Cooking
+                    </span>
+                 </div>
+               );
+             }) : (
                <div className="text-center py-12 text-zinc-500 text-sm">
                  <Clock size={32} className="mx-auto mb-2 opacity-20" />
                  No active orders.
