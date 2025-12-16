@@ -201,7 +201,13 @@ const App: React.FC = () => {
         return (
           <POS 
             products={products} 
-            onTransactionComplete={handleTransactionComplete} 
+            onTransactionComplete={handleTransactionComplete}
+            businessDetails={{
+              name: businessName,
+              address: "123 Business Ave, Metro City",
+              contact: "+63 917 123 4567",
+              footerMessage: "Thank you for shopping with us!"
+            }}
           />
         );
       case ViewState.REPORTING:

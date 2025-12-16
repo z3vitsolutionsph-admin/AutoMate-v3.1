@@ -8,6 +8,12 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 interface POSProps {
   products: Product[];
   onTransactionComplete: (transactions: Transaction[]) => void;
+  businessDetails?: {
+    name: string;
+    address: string;
+    contact: string;
+    footerMessage: string;
+  };
 }
 
 type PaymentMethod = 'cash' | 'card' | 'ewallet' | 'qr';
@@ -36,7 +42,7 @@ const playBeep = () => {
   }
 };
 
-export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => {
+export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, businessDetails }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -56,6 +62,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
   const [showReceipt, setShowReceipt] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState('');
   const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState('');
+  const [transactionDate, setTransactionDate] = useState<string>('');
 
   // Mobile UI States
   const [showCartMobile, setShowCartMobile] = useState(false);
@@ -202,7 +209,8 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
       setSelectedPayment('cash');
       setShowQRView(false);
       setSelectedQRProvider(null);
-      setCurrentOrderId(`TRX-${Date.now().toString().slice(-6)}`);
+      const newOrderId = `TRX-${Date.now().toString().slice(-6)}`;
+      setCurrentOrderId(newOrderId);
       setShowPaymentModal(true);
   };
 
@@ -232,6 +240,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
     setConfirmedPaymentMethod(finalMethod);
 
     const timestamp = new Date().toISOString(); // Store full timestamp
+    setTransactionDate(timestamp);
 
     const newTransactions: Transaction[] = cart.map((item, idx) => ({
       id: `${currentOrderId}-${idx}`,
@@ -264,6 +273,12 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
     return matchesSearch && matchesCategory && matchesSupplier;
   });
 
+  // Default Business Details if not provided
+  const bizName = businessDetails?.name || "AutoMate Store";
+  const bizAddress = businessDetails?.address || "123 Business Ave, Metro City";
+  const bizContact = businessDetails?.contact || "+63 900 000 0000";
+  const bizFooter = businessDetails?.footerMessage || "Thank you for shopping with us!";
+
   return (
     <div className="h-[calc(100vh-6rem)] md:h-[calc(100vh-7rem)] flex flex-col lg:flex-row gap-6 relative">
       <style>{`
@@ -287,12 +302,13 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
             position: absolute;
             left: 0;
             top: 0;
-            width: 100%;
+            width: 80mm; /* Standard thermal width */
             height: auto;
             color: black;
             background: white;
             padding: 0;
             margin: 0;
+            font-family: 'Courier New', Courier, monospace;
             overflow: visible;
           }
           /* Hide scrollbars and UI elements */
@@ -539,8 +555,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
            </div>
 
            <div className="p-6 bg-[#18181b] border-t border-[#27272a] space-y-4">
-              
-              {/* Discount Section */}
+              {/* Discount & Totals Section */}
               <div className="bg-[#09090b] rounded-xl p-3 border border-[#27272a] flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-zinc-400">
@@ -561,7 +576,6 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                       </div>
                   </div>
                   
-                  {/* Visual Breakdown if Discount Applied */}
                   {parseFloat(discountPercent) > 0 && (
                       <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#27272a] text-center">
                           <div className="bg-[#18181b] rounded-lg p-2 border border-[#27272a]">
@@ -606,12 +620,10 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
         </div>
       </div>
       
-      {/* Payment Modals, Receipt Modal, Success Modal remain identical ... */}
       {/* --- PAYMENT MODAL --- */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
            <div className="bg-[#18181b] w-full max-w-4xl rounded-3xl border border-[#27272a] shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
-              {/* Content preserved ... */}
               <div className="flex-1 p-8 border-b md:border-b-0 md:border-r border-[#27272a] bg-[#09090b]">
                  <div className="flex justify-between items-center mb-8">
                     <div>
@@ -792,52 +804,52 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
       {/* --- RECEIPT MODAL --- */}
       {showReceipt && (
         <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-white text-black w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-white text-black w-full max-w-sm rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Printable Content */}
-                <div id="printable-receipt" className="p-8 overflow-y-auto flex-1 font-mono text-sm bg-white">
-                    <div className="text-center mb-6 border-b-2 border-dashed border-gray-300 pb-4">
-                        <div className="flex justify-center mb-2">
-                            <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white font-bold">A</div>
+                <div id="printable-receipt" className="p-6 overflow-y-auto flex-1 font-mono text-xs bg-white text-black leading-tight">
+                    {/* Header */}
+                    <div className="text-center mb-4 pb-4 border-b border-dashed border-gray-400">
+                        <div className="mb-2">
+                            <h2 className="font-bold text-xl uppercase tracking-wider">{bizName}</h2>
                         </div>
-                        <h2 className="font-bold text-xl uppercase tracking-wider mb-1">AutoMate Store</h2>
-                        <p className="text-xs text-gray-500">123 Business Ave, BGC</p>
-                        <p className="text-xs text-gray-500">Taguig City, Metro Manila</p>
-                        <p className="text-xs text-gray-500 mt-1">Tel: +63 917 123 4567</p>
-                    </div>
-
-                    <div className="mb-6 text-xs space-y-1">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Date:</span>
-                            <span>{new Date().toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Order ID:</span>
-                            <span>{currentOrderId}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Cashier:</span>
-                            <span>Admin Pro</span>
+                        <div className="space-y-1 text-[10px] text-gray-600 uppercase">
+                            <p>{bizAddress}</p>
+                            <p>{bizContact}</p>
                         </div>
                     </div>
 
-                    <div className="mb-6 border-b-2 border-dashed border-gray-300 pb-4">
+                    {/* Metadata */}
+                    <div className="mb-4 space-y-1 text-[10px] text-gray-600">
+                        <div className="flex justify-between">
+                            <span>DATE: {new Date().toLocaleDateString()}</span>
+                            <span>TIME: {new Date().toLocaleTimeString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>ORD #: {currentOrderId}</span>
+                            <span>CSH: ADMIN</span>
+                        </div>
+                    </div>
+
+                    {/* Items */}
+                    <div className="mb-4 pb-4 border-b border-dashed border-gray-400">
                         <table className="w-full text-left">
                             <thead>
-                                <tr className="text-xs uppercase text-gray-500 border-b border-gray-200">
-                                    <th className="pb-2">Item</th>
-                                    <th className="pb-2 text-right">Qty</th>
-                                    <th className="pb-2 text-right">Total</th>
+                                <tr className="text-[10px] uppercase text-gray-500 border-b border-gray-300">
+                                    <th className="pb-1 w-8">Qty</th>
+                                    <th className="pb-1">Item</th>
+                                    <th className="pb-1 text-right">Price</th>
+                                    <th className="pb-1 text-right">Total</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {cart.map((item, i) => (
                                     <tr key={i}>
-                                        <td className="py-2">
+                                        <td className="py-1 align-top">{item.quantity}</td>
+                                        <td className="py-1 align-top pr-2">
                                             <div className="font-bold">{item.name}</div>
-                                            <div className="text-[10px] text-gray-500">@{item.price}</div>
                                         </td>
-                                        <td className="py-2 text-right align-top">{item.quantity}</td>
-                                        <td className="py-2 text-right align-top font-medium">
+                                        <td className="py-1 text-right align-top">{formatCurrency(item.price).replace('₱', '')}</td>
+                                        <td className="py-1 text-right align-top font-bold">
                                             {formatCurrency(item.price * item.quantity).replace('₱', '')}
                                         </td>
                                     </tr>
@@ -846,39 +858,51 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                         </table>
                     </div>
 
-                    <div className="space-y-2 mb-6 border-b-2 border-dashed border-gray-300 pb-4">
-                        <div className="flex justify-between text-gray-600">
+                    {/* Totals */}
+                    <div className="space-y-1 mb-6 text-[10px] uppercase text-gray-600">
+                        <div className="flex justify-between">
                             <span>Subtotal</span>
                             <span>{formatCurrency(totals.subtotal)}</span>
                         </div>
                         {totals.discountAmount > 0 && (
-                            <div className="flex justify-between text-emerald-600">
+                            <div className="flex justify-between text-gray-800 font-bold">
                                 <span>Discount</span>
                                 <span>-{formatCurrency(totals.discountAmount)}</span>
                             </div>
                         )}
-                        <div className="flex justify-between text-gray-600">
+                        <div className="flex justify-between">
                             <span>VAT (12%)</span>
                             <span>{formatCurrency(totals.tax)}</span>
                         </div>
-                        <div className="flex justify-between text-xl font-bold mt-2 pt-2 border-t border-gray-200">
-                            <span>Total</span>
+                        <div className="flex justify-between text-lg font-bold text-black mt-2 pt-2 border-t border-dashed border-gray-400">
+                            <span>TOTAL</span>
                             <span>{formatCurrency(totals.total)}</span>
                         </div>
-                        <div className="flex justify-between text-sm text-gray-500 mt-1">
-                            <span>Paid via</span>
-                            <span className="uppercase font-bold">{confirmedPaymentMethod}</span>
+                        
+                        <div className="flex justify-between mt-2 pt-2 border-t border-gray-200">
+                            <span>Payment ({confirmedPaymentMethod})</span>
+                            <span>{formatCurrency(totals.total)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Change</span>
+                            <span>{formatCurrency(0)}</span>
                         </div>
                     </div>
 
-                    <div className="text-center text-xs text-gray-500">
-                        <p className="font-bold mb-1">Thank you for your purchase!</p>
-                        <p>Please come again.</p>
-                        <div className="mt-4 flex justify-center">
-                            <div className="w-full h-12 bg-gray-100 flex items-center justify-center tracking-[0.5em] text-gray-400 font-barcode">
-                                ||| || ||| || ||| ||
+                    {/* Footer */}
+                    <div className="text-center text-[10px] text-gray-500 pt-4 border-t border-dashed border-gray-400">
+                        <p className="font-bold mb-1 text-gray-800">{bizFooter}</p>
+                        <p>No returns without receipt.</p>
+                        <p className="mt-2">Powered by AutoMate</p>
+                        <div className="mt-4 flex justify-center opacity-80">
+                            {/* Visual Barcode Representation */}
+                            <div className="flex gap-0.5 h-10 items-end justify-center w-full max-w-[200px]">
+                                {[...Array(30)].map((_, i) => (
+                                    <div key={i} className={`w-${Math.random() > 0.5 ? '1' : '0.5'} bg-black h-${Math.random() > 0.5 ? 'full' : '3/4'}`}></div>
+                                ))}
                             </div>
                         </div>
+                        <p className="mt-1 text-[8px]">{currentOrderId}</p>
                     </div>
                 </div>
 
@@ -886,15 +910,15 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                 <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-3 print:hidden">
                      <button 
                         onClick={() => setShowReceipt(false)}
-                        className="flex-1 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-xl transition-colors"
+                        className="flex-1 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-xl transition-colors text-sm"
                      >
                          Close
                      </button>
                      <button 
                         onClick={() => window.print()}
-                        className="flex-1 py-3 bg-black hover:bg-gray-800 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 py-3 bg-black hover:bg-gray-800 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
                      >
-                         <Printer size={18} /> Print Now
+                         <Printer size={16} /> Print Receipt
                      </button>
                 </div>
             </div>
@@ -920,13 +944,13 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                     onClick={() => setShowReceipt(true)}
                     className="flex-1 py-3 bg-[#27272a] hover:bg-[#3f3f46] text-white font-bold rounded-xl transition-colors"
                   >
-                     Print Bill
+                     Print Receipt
                   </button>
                   <button 
                     onClick={handleFinalize}
                     className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-colors"
                   >
-                     Done
+                     New Order
                   </button>
                </div>
             </div>

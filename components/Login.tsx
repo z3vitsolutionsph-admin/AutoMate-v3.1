@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Lock, Mail, ArrowRight, AlertCircle, User, KeyRound, Box, Store, Bot, BarChart3 } from 'lucide-react';
 import { Logo } from './Logo';
@@ -176,7 +177,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, businessName }) => {
             </div>
             
             <div className="text-center mt-6">
-               <p className="text-zinc-600 text-xs">Need help? Contact Administrator</p>
+               <p className="text-zinc-600 text-xs mb-2">Need help? Contact Administrator</p>
+               <p className="text-zinc-700 text-[10px] font-bold uppercase tracking-widest">Powered by Z3VITPH</p>
             </div>
          </div>
        </div>

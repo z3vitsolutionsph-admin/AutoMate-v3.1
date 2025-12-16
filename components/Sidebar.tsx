@@ -119,6 +119,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
             <LogOut size={20} strokeWidth={2} />
             <span className="text-sm font-bold">Sign Out</span>
           </button>
+          
+          <div className="mt-6 text-center border-t border-[#27272a]/50 pt-4">
+             <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest opacity-60">Powered by Z3VITPH</p>
+          </div>
         </div>
       </aside>
     </>
