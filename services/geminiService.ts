@@ -219,19 +219,20 @@ export const analyzeStockLevels = async (
     // 2. Prepare concise data payload for AI
     const inventorySummary = products.map(p => ({
       name: p.name,
+      category: p.category,
       currentStock: p.stock,
       totalSoldRecently: salesVelocity[p.name] || 0
     }));
 
     const prompt = `
       You are an inventory optimization engine. Analyze this data: ${JSON.stringify(inventorySummary)}.
-      Identify products that need reordering based on low stock or high sales velocity.
+      Identify products that need reordering based on low stock, category importance, or high sales velocity.
       
       Return a JSON array of objects with these properties:
       - productName (string)
       - currentStock (number)
       - suggestedReorder (number) - Suggest a reasonable amount to buy.
-      - reason (string) - Brief explanation (e.g., "High velocity", "Critical stock").
+      - reason (string) - Brief explanation (e.g., "High velocity", "Critical stock", "Popular Category").
       - priority (string) - "High", "Medium", or "Low".
 
       Only return items that genuinely need attention. If everything is fine, return an empty array.

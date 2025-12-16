@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
 import { Login } from './components/Login';
@@ -7,150 +7,157 @@ import { RoleShell } from './components/RoleShell';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { POS } from './components/POS';
+import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
 import { Settings } from './components/Settings';
-import { ViewState, UserRole, OnboardingState, Product, Transaction } from './types';
+import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier } from './types';
 
 const App: React.FC = () => {
-  // Constants for LocalStorage
+  // --- Constants & Storage Keys ---
   const STORAGE_KEY_SETUP = 'automate_is_setup';
   const STORAGE_KEY_BIZ_NAME = 'automate_biz_name';
   const STORAGE_KEY_CATS = 'automate_categories';
   const STORAGE_KEY_PRODUCTS = 'automate_products';
+  const STORAGE_KEY_SUPPLIERS = 'automate_suppliers';
+  const STORAGE_KEY_TRANSACTIONS = 'automate_transactions';
 
-  // Helper for safe JSON parsing
+  // --- Helper: Safe JSON Parsing ---
   const safeJsonParse = <T,>(key: string, fallback: T): T => {
     try {
       const stored = localStorage.getItem(key);
       return stored ? JSON.parse(stored) : fallback;
     } catch (error) {
-      console.error(`Error parsing storage key "${key}":`, error);
+      console.warn(`Data recovery: Resetting ${key} to default.`);
       return fallback;
     }
   };
 
-  // State Management
-  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => {
-    return localStorage.getItem(STORAGE_KEY_SETUP) === 'true';
-  });
+  // --- State Initialization ---
   
-  // For demo purposes, defaulting auth to true if setup is complete, otherwise false
+  // System State
+  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => 
+    localStorage.getItem(STORAGE_KEY_SETUP) === 'true'
+  );
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-  
-  // -- Global App Data --
-  const [businessName, setBusinessName] = useState<string>(() => localStorage.getItem(STORAGE_KEY_BIZ_NAME) || 'AutoMateSystem Store');
-  
-  const [categories, setCategories] = useState<string[]>(() => 
-    safeJsonParse<string[]>(STORAGE_KEY_CATS, ['General', 'Electronics', 'Home', 'Clothing'])
+  const userRole = UserRole.ADMIN_PRO; // Configurable role for demo
+
+  // Business Data
+  const [businessName, setBusinessName] = useState<string>(() => 
+    localStorage.getItem(STORAGE_KEY_BIZ_NAME) || 'AutoMateSystem Store'
   );
   
+  const [categories, setCategories] = useState<string[]>(() => 
+    safeJsonParse<string[]>(STORAGE_KEY_CATS, ['General', 'Electronics', 'Food & Beverage', 'Services'])
+  );
+
   const [products, setProducts] = useState<Product[]>(() => 
     safeJsonParse<Product[]>(STORAGE_KEY_PRODUCTS, [
-      { id: '1', name: 'Wireless Headphones', sku: 'AUD-001', category: 'Electronics', price: 2500, stock: 15, supplier: 'AudioTech', description: 'Noise cancelling headphones' },
-      { id: '2', name: 'Ergonomic Mouse', sku: 'ACC-002', category: 'Electronics', price: 1200, stock: 8, supplier: 'TechGear', description: 'Vertical mouse for comfort' },
-      { id: '3', name: 'Cotton T-Shirt', sku: 'APP-003', category: 'Clothing', price: 450, stock: 50, supplier: 'ApparelCo', description: '100% Cotton basic tee' },
-      { id: '4', name: 'Desk Lamp', sku: 'HOM-004', category: 'Home', price: 899, stock: 20, supplier: 'BrightLives', description: 'LED adjustable lamp' }
+      { id: '1', name: 'Signature Coffee Blend', sku: 'BVG-001', category: 'Food & Beverage', price: 180, stock: 50, supplier: 'BeanSource Inc', description: 'Premium arabica dark roast' },
+      { id: '2', name: 'Wireless POS Terminal', sku: 'EQP-102', category: 'Electronics', price: 12500, stock: 5, supplier: 'TechSolutions Ltd', description: 'Handheld payment device' },
+      { id: '3', name: 'Thermal Receipt Paper', sku: 'SUP-203', category: 'General', price: 45, stock: 200, supplier: 'Office Depot', description: '80mm x 80m rolls' },
+      { id: '4', name: 'Maintenance Service', sku: 'SRV-004', category: 'Services', price: 1500, stock: 999, supplier: 'Internal', description: 'Monthly system checkup' }
+    ])
+  );
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => 
+    safeJsonParse<Supplier[]>(STORAGE_KEY_SUPPLIERS, [
+      { id: '1', name: 'BeanSource Inc', contactPerson: 'Jim Bean', email: 'orders@beansource.com', phone: '0917-555-0001', address: 'BGC, Taguig City' },
+      { id: '2', name: 'TechSolutions Ltd', contactPerson: 'Sarah Tech', email: 'support@techsol.ph', phone: '0918-123-4567', address: 'Ortigas Center, Pasig' },
+      { id: '3', name: 'Office Depot', contactPerson: 'Sales Dept', email: 'b2b@officedepot.ph', phone: '02-8888-7777', address: 'Makati Ave, Makati' }
     ])
   );
   
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => 
+    safeJsonParse<Transaction[]>(STORAGE_KEY_TRANSACTIONS, [])
+  );
 
-  // In a real app, this would be fetched from auth context
-  const userRole = UserRole.ADMIN_PRO; 
+  // --- Effects ---
 
-  // Auto-login logic for demo smoothness if setup is done
+  // Auto-redirect logic based on setup status
   useEffect(() => {
     if (isSetupComplete) {
-       // In a real app, we wouldn't auto-authenticate like this without a token check
-       // But for this "Business Buddy" demo flow, we might want to show Login screen
+       // Setup is done, require login.
        setIsAuthenticated(false); 
     }
-  }, []);
+  }, [isSetupComplete]);
 
-  // Persistence Effects
+  // Data Persistence Effect
   useEffect(() => {
     if (isSetupComplete) {
-      try {
-        localStorage.setItem(STORAGE_KEY_SETUP, 'true');
-        localStorage.setItem(STORAGE_KEY_BIZ_NAME, businessName);
-        localStorage.setItem(STORAGE_KEY_CATS, JSON.stringify(categories));
-        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
-      } catch (e) {
-        console.error("Failed to save to localStorage", e);
-      }
-    }
-  }, [isSetupComplete, businessName, categories, products]);
+      const dataToSave = {
+        [STORAGE_KEY_SETUP]: 'true',
+        [STORAGE_KEY_BIZ_NAME]: businessName,
+        [STORAGE_KEY_CATS]: JSON.stringify(categories),
+        [STORAGE_KEY_PRODUCTS]: JSON.stringify(products),
+        [STORAGE_KEY_SUPPLIERS]: JSON.stringify(suppliers),
+        [STORAGE_KEY_TRANSACTIONS]: JSON.stringify(transactions)
+      };
 
-  const handleOnboardingComplete = (data: OnboardingState) => {
+      Object.entries(dataToSave).forEach(([key, value]) => {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {
+          console.error(`Failed to save ${key}`, e);
+        }
+      });
+    }
+  }, [isSetupComplete, businessName, categories, products, suppliers, transactions]);
+
+  // --- Handlers ---
+
+  const handleOnboardingComplete = useCallback((data: OnboardingState) => {
     setBusinessName(data.businessName);
     setCategories(data.generatedCategories);
 
-    // Initialize "Gate 3" Products based on generated categories
-    const initialProducts: Product[] = [
-      {
-        id: 'INIT-001',
-        name: `Signature ${data.generatedCategories[0] || 'Item'}`,
-        sku: 'START-001',
-        category: data.generatedCategories[0] || 'General',
-        price: 1500,
-        stock: 50,
-        description: 'Initial inventory item created during setup.',
-        supplier: 'Initial Setup'
-      },
-      {
-        id: 'INIT-002',
-        name: `Premium ${data.generatedCategories[1] || 'Item'}`,
-        sku: 'START-002',
-        category: data.generatedCategories[1] || 'General',
-        price: 2500,
-        stock: 25,
-        description: 'Initial inventory item created during setup.',
-        supplier: 'Initial Setup'
-      },
-      {
-        id: 'INIT-003',
-        name: `Standard ${data.generatedCategories[0] || 'Item'}`,
-        sku: 'START-003',
-        category: data.generatedCategories[0] || 'General',
-        price: 999,
-        stock: 100,
-        description: 'Initial inventory item created during setup.',
-        supplier: 'Initial Setup'
-      }
-    ];
+    // Generate specific starter products based on business type
+    const starterProducts: Product[] = data.generatedCategories.slice(0, 3).map((cat, idx) => ({
+      id: `INIT-${idx + 100}`,
+      name: `Starter ${cat} Item`,
+      sku: `START-00${idx + 1}`,
+      category: cat,
+      price: (idx + 1) * 500,
+      stock: 20 * (idx + 1),
+      description: 'Automatically generated starter item.',
+      supplier: 'Initial Setup'
+    }));
 
-    setProducts(initialProducts);
+    setProducts(prev => [...starterProducts, ...prev]);
     setIsSetupComplete(true);
-    setIsAuthenticated(true); // Auto-login after onboarding
-  };
+    setIsAuthenticated(true); // Smooth transition: Auto-login after setup
+  }, []);
 
-  const handleTransactionComplete = (newTransactions: Transaction[]) => {
+  const handleTransactionComplete = useCallback((newTransactions: Transaction[]) => {
+    // 1. Record Transactions
     setTransactions(prev => [...newTransactions, ...prev]);
     
-    // Update stock levels
-    setProducts(prev => prev.map(p => {
-        // Calculate total quantity sold for this product in the new transactions
-        const soldQuantity = newTransactions
-          .filter(tr => tr.product === p.name)
-          .reduce((sum, tr) => sum + (tr.quantity || 1), 0);
-        
-        if (soldQuantity > 0) {
-            return { ...p, stock: Math.max(0, p.stock - soldQuantity) };
+    // 2. Update Inventory Stocks
+    setProducts(prevProducts => {
+      // Create a map of sold quantities to optimize lookup
+      const soldMap = new Map<string, number>();
+      
+      newTransactions.forEach(tx => {
+        // Assuming 'product' in transaction matches 'name' in product list. 
+        // In a real app, use IDs for stability.
+        const currentSold = soldMap.get(tx.product) || 0;
+        soldMap.set(tx.product, currentSold + (tx.quantity || 1));
+      });
+
+      return prevProducts.map(p => {
+        const soldQty = soldMap.get(p.name);
+        if (soldQty) {
+          return { ...p, stock: Math.max(0, p.stock - soldQty) };
         }
         return p;
-    }));
-  };
+      });
+    });
+  }, []);
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-  };
+  const handleLogin = useCallback(() => setIsAuthenticated(true), []);
+  const handleLogout = useCallback(() => setIsAuthenticated(false), []);
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-  };
+  // --- Render Logic ---
 
   const renderContent = () => {
     switch (currentView) {
@@ -166,7 +173,10 @@ const App: React.FC = () => {
           <Inventory 
             products={products} 
             setProducts={setProducts} 
-            categories={categories} 
+            categories={categories}
+            suppliers={suppliers}
+            setSuppliers={setSuppliers}
+            transactions={transactions}
           />
         );
       case ViewState.POS:
@@ -174,6 +184,13 @@ const App: React.FC = () => {
           <POS 
             products={products} 
             onTransactionComplete={handleTransactionComplete} 
+          />
+        );
+      case ViewState.REPORTING:
+        return (
+          <Reporting
+            transactions={transactions}
+            products={products}
           />
         );
       case ViewState.PROMOTER:
@@ -187,19 +204,17 @@ const App: React.FC = () => {
     }
   };
 
-  // --- View Routing Logic ---
-  
-  // 1. New User -> Onboarding
+  // 1. Onboarding Flow
   if (!isSetupComplete) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // 2. Returning User (Not Logged In) -> Login
+  // 2. Authentication Flow
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} businessName={businessName} />;
   }
 
-  // 3. Authenticated User -> Main App
+  // 3. Main Application Flow
   return (
     <RoleShell role={userRole}>
       <Layout 

@@ -22,6 +22,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
   // Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState<string | null>(null);
   
   // Mobile UI States
   const [showCartMobile, setShowCartMobile] = useState(false);
@@ -67,6 +68,13 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
     setCart(prev => prev.filter(item => item.id !== id));
   };
 
+  const handleConfirmRemove = () => {
+    if (itemToRemove) {
+      removeFromCart(itemToRemove);
+      setItemToRemove(null);
+    }
+  };
+
   const updateQuantity = (id: string, delta: number) => {
     const item = cart.find(i => i.id === id);
     const product = products.find(p => p.id === id);
@@ -74,11 +82,17 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
 
     const newQty = item.quantity + delta;
     if (newQty > product.stock) return;
+    
+    // If reducing quantity to 0, ask for confirmation
+    if (newQty <= 0) {
+      setItemToRemove(id);
+      return;
+    }
 
     setCart(prev => prev.map(i => {
-      if (i.id === id) return { ...i, quantity: Math.max(0, newQty) };
+      if (i.id === id) return { ...i, quantity: newQty };
       return i;
-    }).filter(i => i.quantity > 0));
+    }));
   };
 
   const totals = useMemo(() => {
@@ -309,8 +323,12 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                  `}
                >
                   <div className="flex justify-center -mt-8 mb-2">
-                     <div className="w-24 h-24 rounded-full bg-[#09090b] border-4 border-[#18181b] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                        <ChefHat size={32} className="text-zinc-600 group-hover:text-amber-500 transition-colors" />
+                     <div className="w-24 h-24 rounded-full bg-[#09090b] border-4 border-[#18181b] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform overflow-hidden">
+                        {product.imageUrl ? (
+                           <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                           <ChefHat size={32} className="text-zinc-600 group-hover:text-amber-500 transition-colors" />
+                        )}
                      </div>
                   </div>
                   <div className="text-center">
@@ -366,8 +384,12 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                     {/* Row 1: Item Info & Delete */}
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-3">
-                           <div className="w-10 h-10 rounded-xl bg-[#18181b] flex items-center justify-center text-zinc-500 shrink-0">
-                              <ChefHat size={18} />
+                           <div className="w-10 h-10 rounded-xl bg-[#18181b] flex items-center justify-center text-zinc-500 shrink-0 overflow-hidden">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <ChefHat size={18} />
+                              )}
                            </div>
                            <div>
                               <h4 className="text-white font-bold text-sm line-clamp-1">{item.name}</h4>
@@ -375,7 +397,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
                            </div>
                         </div>
                         <button 
-                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.id); }}
+                            onClick={(e) => { e.stopPropagation(); setItemToRemove(item.id); }}
                             className="text-zinc-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
                             title="Remove Item"
                         >
@@ -563,6 +585,37 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete }) => 
               </div>
            </div>
         </div>
+      )}
+
+      {/* --- CONFIRMATION MODAL --- */}
+      {itemToRemove && (
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6 w-full max-w-sm text-center relative shadow-2xl animate-in zoom-in-95 duration-300">
+               <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 size={32} className="text-rose-500" />
+               </div>
+               
+               <h2 className="text-xl font-bold text-white mb-2">Remove Item?</h2>
+               <p className="text-zinc-400 text-sm mb-6">
+                 Are you sure you want to remove this item from the cart?
+               </p>
+
+               <div className="flex gap-3">
+                  <button 
+                    onClick={() => setItemToRemove(null)}
+                    className="flex-1 py-3 bg-[#27272a] hover:bg-[#3f3f46] text-white font-bold rounded-xl transition-colors"
+                  >
+                     Cancel
+                  </button>
+                  <button 
+                    onClick={handleConfirmRemove}
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl transition-colors"
+                  >
+                     Remove
+                  </button>
+               </div>
+            </div>
+         </div>
       )}
 
       {/* --- SUCCESS MODAL --- */}
