@@ -1,0 +1,8 @@
+{
+  "name": "AutoMateSystem-v3.0",
+  "description": "Comprehensive Inventory & POS System with AI-powered features, multi-store management, and promoter tracking.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
