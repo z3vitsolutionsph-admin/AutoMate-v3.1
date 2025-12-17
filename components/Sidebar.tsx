@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Users, LifeBuoy, LogOut, Settings, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Users, LifeBuoy, LogOut, Settings, BarChart3, ArrowRightLeft } from 'lucide-react';
 import { ViewState, UserRole } from '../types';
 import { Logo } from './Logo';
 
@@ -112,9 +112,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
             <span className="text-xs text-zinc-600 font-medium uppercase tracking-widest">Logged in as</span>
             <p className="text-sm font-bold text-zinc-400 mt-0.5">{role.replace('_', ' ')}</p>
           </div>
+
           <button 
             onClick={onLogout}
-            className="group w-full flex items-center gap-3 px-4 py-3 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+            className="group w-full flex items-center gap-3 px-4 py-3 text-zinc-500 hover:text-white hover:bg-[#27272a] rounded-xl transition-all mb-2"
+          >
+            <ArrowRightLeft size={20} strokeWidth={2} />
+            <span className="text-sm font-bold">Switch User</span>
+          </button>
+
+          <button 
+            onClick={onLogout}
+            className="group w-full flex items-center gap-3 px-4 py-3 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all"
           >
             <LogOut size={20} strokeWidth={2} />
             <span className="text-sm font-bold">Sign Out</span>

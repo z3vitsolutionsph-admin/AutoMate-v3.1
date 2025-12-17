@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { DollarSign, Clock, Users, Flame, AlertCircle, ChefHat, ArrowUpRight, Search, Bell, Receipt, History, UserCheck, Calendar, Check } from 'lucide-react';
+import { DollarSign, Clock, Users, Flame, AlertCircle, ArrowUpRight, Search, Bell, Receipt, History, UserCheck, Calendar, Check, ScrollText, FileText, Download } from 'lucide-react';
 import { formatCurrency } from '../constants';
 import { Transaction, Product } from '../types';
 
@@ -36,10 +36,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
     }, 0);
   }, [transactions]);
 
-  // 3. Active Orders (Kitchen)
-  const activeOrders = transactions.filter(t => t.status !== 'Completed' && t.status !== 'Refunded');
-  
-  // 4. Group Transactions into Receipts (for Logs)
+  // 3. Group Transactions into Receipts (for Logs)
   const receiptLogs = useMemo(() => {
     const grouped: Record<string, GroupedTransaction> = {};
     
@@ -48,9 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
 
     sortedTx.forEach(t => {
        // Extract Order ID (e.g., "TRX-123456" from "TRX-123456-0")
-       // Assumes format: TRX-TIMESTAMP-INDEX. We split by '-' and take first two parts.
        const parts = t.id.split('-');
-       // Handle standard format TRX-123456-0 or simple TRX-123456
        const orderId = parts.length >= 3 ? `${parts[0]}-${parts[1]}` : t.id;
 
        if (!grouped[orderId]) {
@@ -70,7 +65,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
     return Object.values(grouped);
   }, [transactions]);
 
-  // 5. Popular Items
+  // 4. Popular Items
   const popularItems = useMemo(() => {
     const sales: Record<string, number> = {};
     transactions.forEach(t => {
@@ -81,6 +76,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 6);
   }, [transactions, products]);
+
+  // 5. Activity Feed (New Log Panel)
+  const activityFeed = useMemo(() => {
+      const feed = transactions.map(t => ({
+          id: t.id,
+          type: 'SALE',
+          title: 'Receipt Issued',
+          time: new Date(t.date),
+          details: `Sold ${t.quantity || 1}x ${t.product}`,
+          amount: t.amount
+      }));
+
+      // Add dummy shift start
+      const shiftStart = new Date();
+      shiftStart.setHours(8, 0, 0, 0);
+      feed.push({
+          id: 'SHIFT-START',
+          type: 'SYSTEM',
+          title: 'Shift Started',
+          time: shiftStart,
+          details: 'User: Admin Pro',
+          amount: 0
+      });
+      
+      return feed.sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 10);
+  }, [transactions]);
 
   const outOfStock = products.filter(p => p.stock === 0);
   const lowStock = products.filter(p => p.stock > 0 && p.stock < 10);
@@ -106,8 +127,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
       </div>
 
       {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Today's Sales - NEW */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Today's Sales */}
         <div className="bg-[#18181b] border border-[#27272a] p-6 rounded-2xl relative overflow-hidden group hover:border-emerald-500/50 transition-colors shadow-lg">
            <div className="absolute right-4 top-4 p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
              <DollarSign size={24} />
@@ -119,7 +140,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
            </p>
         </div>
 
-        {/* Shift Info / Cashier - NEW */}
+        {/* Shift Info / Cashier */}
         <div className="bg-[#18181b] border border-[#27272a] p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/50 transition-colors shadow-lg">
            <div className="absolute right-4 top-4 p-2 bg-blue-500/10 rounded-lg text-blue-500">
              <UserCheck size={24} />
@@ -132,43 +153,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
            </div>
         </div>
 
-        {/* In Progress */}
-        <div className="bg-[#18181b] border border-[#27272a] p-6 rounded-2xl relative overflow-hidden group">
-           <div className="absolute right-4 top-4 p-2 bg-amber-500/10 rounded-lg text-amber-500">
-             <ChefHat size={24} />
-           </div>
-           <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Kitchen Queue</p>
-           <h3 className="text-3xl font-bold text-white mt-2">{activeOrders.length}</h3>
-           <p className="text-zinc-500 text-xs mt-2">Active orders in progress</p>
-        </div>
-
-        {/* Out of Stock */}
-        <div className="bg-[#18181b] border border-[#27272a] p-6 rounded-2xl relative overflow-hidden group">
-           <div className="absolute right-4 top-4 p-2 bg-red-500/10 rounded-lg text-red-500">
+        {/* Alerts / Stock */}
+        <div className="bg-[#18181b] border border-[#27272a] p-6 rounded-2xl relative overflow-hidden group hover:border-rose-500/50 transition-colors shadow-lg">
+           <div className="absolute right-4 top-4 p-2 bg-rose-500/10 rounded-lg text-rose-500">
              <AlertCircle size={24} />
            </div>
-           <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Alerts</p>
-           <h3 className="text-3xl font-bold text-white mt-2">{outOfStock.length}</h3>
-           <p className="text-red-400 text-xs font-bold mt-2">{lowStock.length} items low stock</p>
+           <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider">System Alerts</p>
+           <h3 className="text-3xl font-bold text-white mt-2">{outOfStock.length + lowStock.length}</h3>
+           <p className="text-rose-400 text-xs font-bold mt-2">
+             {outOfStock.length} Out of Stock • {lowStock.length} Low
+           </p>
         </div>
       </div>
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left Column: Transaction Logs & Popular */}
+        {/* Left Column: Logs & Popular */}
         <div className="lg:col-span-2 space-y-8">
            
-           {/* Transaction Logs (Receipts) - IMPROVED */}
+           {/* Receipt Logs (Renamed from Transaction Logs) */}
            <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6 shadow-xl">
              <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-violet-500/10 rounded-lg text-violet-400">
-                       <History size={20} />
+                       <FileText size={20} />
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold text-white">Recent Transactions</h3>
-                        <p className="text-xs text-zinc-500">Live feed of completed receipts</p>
+                        <h3 className="text-xl font-bold text-white">Receipt Logs</h3>
+                        <p className="text-xs text-zinc-500">Monitor issued receipts and details</p>
                     </div>
                 </div>
                 <button className="text-xs font-bold bg-[#27272a] text-white px-3 py-1.5 rounded-lg hover:bg-zinc-700 transition-colors">
@@ -224,7 +237,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
                             <tr>
                                 <td colSpan={5} className="py-8 text-center text-zinc-500">
                                     <Receipt size={32} className="mx-auto mb-2 opacity-20" />
-                                    No transactions recorded yet.
+                                    No receipts issued yet.
                                 </td>
                             </tr>
                         )}
@@ -233,7 +246,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
              </div>
            </div>
 
-           {/* Popular Dishes */}
+           {/* Popular Items */}
            <div>
              <div className="flex justify-between items-center mb-4">
                <h3 className="text-xl font-bold text-white">Popular Items</h3>
@@ -242,7 +255,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
              
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {popularItems.map(item => (
-                  <div key={item.id} className="bg-[#18181b] border border-[#27272a] p-4 rounded-2xl flex items-center gap-4 hover:border-amber-500/30 transition-colors cursor-pointer group">
+                  <div key={item.id} className="bg-[#18181b] border border-[#27272a] p-4 rounded-2xl flex items-center gap-4 hover:border-amber-500/30 transition-colors cursor-pointer group shadow-lg">
                      <div className="w-16 h-16 rounded-xl bg-[#27272a] flex items-center justify-center text-zinc-500 group-hover:bg-amber-500/10 group-hover:text-amber-500 transition-colors">
                         <Flame size={24} />
                      </div>
@@ -262,11 +275,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
            </div>
         </div>
 
-        {/* Right Column: Out of Stock & Queue */}
+        {/* Right Column: Alerts & Activity Feed */}
         <div className="space-y-8">
             
             {/* Out of Stock Alert List */}
-           <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6">
+           <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6 shadow-xl">
              <div className="flex justify-between items-center mb-6">
                <h3 className="text-xl font-bold text-white">Low Stock Alerts</h3>
              </div>
@@ -274,31 +287,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
                {outOfStock.length > 0 || lowStock.length > 0 ? (
                  <>
                   {outOfStock.map(item => (
-                    <div key={item.id} className="bg-[#18181b] border border-red-900/30 p-3 rounded-2xl flex items-center justify-between">
+                    <div key={item.id} className="bg-[#18181b] border border-red-900/30 p-3 rounded-2xl flex items-center justify-between group hover:border-red-500/50 transition-colors">
                         <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 shrink-0">
                             <AlertCircle size={18} />
                         </div>
                         <div>
-                            <h4 className="text-zinc-200 font-bold text-sm line-clamp-1">{item.name}</h4>
-                            <p className="text-red-400 text-xs">0 items left</p>
+                            <h4 className="text-zinc-200 font-bold text-sm line-clamp-1 group-hover:text-white transition-colors">{item.name}</h4>
+                            <p className="text-red-400 text-xs font-bold">5 items left</p>
                         </div>
                         </div>
-                        <button className="text-[10px] font-bold bg-zinc-800 text-white px-3 py-1.5 rounded-lg hover:bg-zinc-700">Restock</button>
+                        <button className="text-[10px] font-bold bg-[#27272a] text-white px-3 py-1.5 rounded-lg hover:bg-zinc-700 transition-colors border border-white/5">Restock</button>
                     </div>
                   ))}
                   {lowStock.map(item => (
-                    <div key={item.id} className="bg-[#18181b] border border-amber-900/30 p-3 rounded-2xl flex items-center justify-between">
+                    <div key={item.id} className="bg-[#18181b] border border-amber-900/30 p-3 rounded-2xl flex items-center justify-between group hover:border-amber-500/50 transition-colors">
                         <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
                             <AlertCircle size={18} />
                         </div>
                         <div>
-                            <h4 className="text-zinc-200 font-bold text-sm line-clamp-1">{item.name}</h4>
-                            <p className="text-amber-400 text-xs">{item.stock} items left</p>
+                            <h4 className="text-zinc-200 font-bold text-sm line-clamp-1 group-hover:text-white transition-colors">{item.name}</h4>
+                            <p className="text-amber-400 text-xs font-bold">{item.stock} items left</p>
                         </div>
                         </div>
-                        <button className="text-[10px] font-bold bg-zinc-800 text-white px-3 py-1.5 rounded-lg hover:bg-zinc-700">Restock</button>
+                        <button className="text-[10px] font-bold bg-[#27272a] text-white px-3 py-1.5 rounded-lg hover:bg-zinc-700 transition-colors border border-white/5">Restock</button>
                     </div>
                   ))}
                  </>
@@ -311,39 +324,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) 
              </div>
            </div>
 
-           {/* Order Queue */}
-           <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6 h-fit">
+           {/* System Activity Log (New) */}
+           <div className="bg-[#18181b] border border-[#27272a] rounded-3xl p-6 h-fit shadow-xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-white">Order Queue</h3>
-                <div className="text-xs text-zinc-500"><Clock size={14} className="inline mr-1" />{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                <h3 className="text-xl font-bold text-white">System Logs</h3>
+                <div className="text-xs text-zinc-500 flex items-center gap-1.5">
+                   <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                   Live
+                </div>
               </div>
 
-              <div className="space-y-4">
-                {activeOrders.length > 0 ? activeOrders.slice(0, 6).map(order => (
-                  <div key={order.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-[#27272a] transition-colors group cursor-pointer border border-transparent hover:border-[#3f3f46]">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-xs group-hover:bg-amber-500 group-hover:text-black transition-colors">
-                            {order.quantity}x
-                        </div>
-                        <div>
-                            <h4 className="text-white font-bold text-sm truncate max-w-[120px]">{order.product}</h4>
-                            <p className="text-zinc-500 text-xs">...{order.id.slice(-4)}</p>
-                        </div>
+              <div className="space-y-6 relative pl-2">
+                {/* Timeline Line */}
+                <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-[#27272a]"></div>
+
+                {activityFeed.length > 0 ? activityFeed.map((item, idx) => (
+                  <div key={idx} className="flex gap-4 relative">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 z-10 border-4 border-[#18181b] shadow-sm ${
+                        item.type === 'SALE' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
+                      }`}>
+                          {item.type === 'SALE' ? <Receipt size={16} /> : <ScrollText size={16} />}
                       </div>
-                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
-                        Cooking
-                      </span>
+                      <div className="pt-0.5 flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-0.5">
+                             <h4 className="text-white text-sm font-bold">{item.title}</h4>
+                             <span className="text-[10px] text-zinc-500 font-mono bg-[#27272a] px-1.5 py-0.5 rounded">
+                               {item.time.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+                             </span>
+                          </div>
+                          <p className="text-zinc-400 text-xs truncate">{item.details}</p>
+                          {item.type === 'SALE' && (
+                             <p className="text-emerald-500 text-[10px] font-bold mt-1 bg-emerald-500/5 inline-block px-1.5 py-0.5 rounded border border-emerald-500/10">
+                                +{formatCurrency(item.amount)}
+                             </p>
+                          )}
+                      </div>
                   </div>
                 )) : (
-                  <div className="text-center py-12 text-zinc-500 text-sm">
-                    <Clock size={32} className="mx-auto mb-2 opacity-20" />
-                    No active orders.
-                  </div>
+                   <div className="text-center py-8 text-zinc-500 text-sm">
+                      No recent activity.
+                   </div>
                 )}
               </div>
-
-              <button className="w-full mt-6 py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-colors">
-                View All Orders
+              
+              <button className="w-full mt-8 py-3 bg-[#27272a] hover:bg-[#3f3f46] text-white font-bold text-sm rounded-xl transition-colors border border-white/5 flex items-center justify-center gap-2">
+                <Download size={16} /> Export Log File
               </button>
            </div>
         </div>
