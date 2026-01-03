@@ -4,7 +4,7 @@ import {
   Check, Edit3, Trash2, Filter, ChevronDown, CheckSquare, Square, 
   Layers, Save, Wand2, Info, ArrowUpRight, ShieldAlert, MoreHorizontal,
   Building2, Tag, Box, Upload, Link, Image as ImageIcon, Trash, Zap,
-  Type as FontType, ArrowRight, Globe, FilterX, RefreshCw
+  Type as FontType, ArrowRight, Globe, FilterX, RefreshCw, Phone, MapPin, Mail, User
 } from 'lucide-react';
 import { Product, Supplier, Transaction, UserRole } from '../types';
 import { formatCurrency } from '../constants';
@@ -70,6 +70,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
     if (isOpen) {
       if (product) {
         setFormData({ ...product });
+        setPreviewError(false); // Reset preview error when opening for existing product
       } else {
         setFormData({
           name: '',
@@ -81,13 +82,18 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
           supplier: suppliers[0]?.name || '',
           imageUrl: ''
         });
+        setPreviewError(false); // Reset for new product
       }
       setErrors({});
-      setPreviewError(false);
       setDescriptionVariations([]);
       setShowVariations(false);
     }
   }, [product, isOpen, categories, suppliers]);
+
+  // When URL changes, reset error state to try loading again
+  useEffect(() => {
+    setPreviewError(false);
+  }, [formData.imageUrl]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -190,7 +196,13 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
             </div>
             <div className="lg:col-span-5 space-y-6">
               <div className="aspect-square rounded-[3rem] bg-slate-50 border-2 border-slate-200 flex items-center justify-center overflow-hidden relative group">
-                {isGeneratingImage ? <Loader2 className="animate-spin text-indigo-600" size={48} /> : (formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Preview" /> : <ImageIcon size={48} className="text-slate-200" />)}
+                {isGeneratingImage ? 
+                  <Loader2 className="animate-spin text-indigo-600" size={48} /> : 
+                  (formData.imageUrl && !previewError ? 
+                    <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Preview" onError={() => setPreviewError(true)} /> : 
+                    <ImageIcon size={48} className="text-slate-200" />
+                  )
+                }
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
                   <button type="button" onClick={() => handleAiImageAction('search')} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg"><Globe size={18}/></button>
                   <button type="button" onClick={() => handleAiImageAction('generate')} className="bg-indigo-50 text-indigo-600 p-3 rounded-xl border border-indigo-100"><Zap size={18}/></button>
@@ -208,14 +220,125 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
   );
 };
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, transactions, role }) => {
+interface SupplierModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (supplier: Supplier) => void;
+  supplier: Supplier | null;
+}
+
+const SupplierModal: React.FC<SupplierModalProps> = ({ isOpen, onClose, onSave, supplier }) => {
+  const [formData, setFormData] = useState<Partial<Supplier>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isOpen) {
+      if (supplier) {
+        setFormData({ ...supplier });
+      } else {
+        setFormData({ name: '', contactPerson: '', email: '', phone: '', address: '' });
+      }
+      setErrors({});
+    }
+  }, [supplier, isOpen]);
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!formData.name?.trim()) newErrors.name = "Company name required";
+    if (!formData.contactPerson?.trim()) newErrors.contactPerson = "Contact person required";
+    if (!formData.email?.trim()) newErrors.email = "Email required";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white/95 backdrop-blur-2xl border border-white/40 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white/50">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-100">
+              {supplier ? <Edit3 size={24} /> : <Building2 size={24} />}
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">{supplier ? 'Update Partner' : 'Register Vendor'}</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Supply Chain Management</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 transition-all hover:bg-slate-100 rounded-xl border border-slate-200">
+            <X size={20} />
+          </button>
+        </div>
+        <form className="p-8 space-y-5" onSubmit={(e) => { e.preventDefault(); if (validate()) onSave(formData as Supplier); }}>
+           
+           <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Company Name</label>
+             <div className="relative">
+               <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+               <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all" placeholder="Legal Entity Name" />
+             </div>
+             {errors.name && <span className="text-[10px] text-rose-500 font-bold">{errors.name}</span>}
+           </div>
+
+           <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Key Personnel</label>
+             <div className="relative">
+               <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+               <input value={formData.contactPerson || ''} onChange={e => setFormData({...formData, contactPerson: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all" placeholder="Contact Person" />
+             </div>
+           </div>
+
+           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-2">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
+               <div className="relative">
+                 <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                 <input value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all" placeholder="business@email.com" />
+               </div>
+             </div>
+             <div className="space-y-2">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phone</label>
+               <div className="relative">
+                 <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                 <input value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all" placeholder="+63 900 000 0000" />
+               </div>
+             </div>
+           </div>
+
+           <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Office Address</label>
+             <div className="relative">
+               <MapPin className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+               <input value={formData.address || ''} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all" placeholder="Full Business Address" />
+             </div>
+           </div>
+
+           <div className="pt-4 border-t border-slate-100 flex gap-4">
+             <button type="button" onClick={onClose} className="flex-1 py-4 text-slate-400 font-bold hover:text-slate-900 bg-slate-50 rounded-2xl transition-colors">Cancel</button>
+             <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all">Save Vendor</button>
+           </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, categories, suppliers, setSuppliers, transactions, role }) => {
   const [activeTab, setActiveTab] = useState<'products' | 'suppliers'>('products');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterSupplier, setFilterSupplier] = useState('All');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // Product Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Supplier Modal State
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   
   // Neural Auto-Sync State
   const [isSyncing, setIsSyncing] = useState(false);
@@ -297,8 +420,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
             <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
           </button>
           {!isEmployee && (
-            <button onClick={() => setIsProductModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black shadow-xl shadow-indigo-100 flex items-center gap-2 transition-all uppercase tracking-widest text-sm">
-              <Plus size={18} /> Enroll Asset
+            <button 
+              onClick={() => activeTab === 'products' ? setIsProductModalOpen(true) : setIsSupplierModalOpen(true)} 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black shadow-xl shadow-indigo-100 flex items-center gap-2 transition-all uppercase tracking-widest text-sm"
+            >
+              <Plus size={18} /> {activeTab === 'products' ? 'Enroll Asset' : 'Register Vendor'}
             </button>
           )}
         </div>
@@ -402,19 +528,27 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
       {activeTab === 'suppliers' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in">
           {suppliers.map(sup => (
-            <div key={sup.id} className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm hover:shadow-md transition-all">
+            <div key={sup.id} className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm hover:shadow-md transition-all group">
               <div className="flex justify-between items-start mb-6">
                 <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Building2 size={24} /></div>
-                <button className="text-slate-300 hover:text-indigo-600 transition-colors"><MoreHorizontal size={20}/></button>
+                <button onClick={() => { setEditingSupplier(sup); setIsSupplierModalOpen(true); }} className="p-2 text-slate-300 hover:text-indigo-600 bg-white border border-transparent hover:border-slate-200 rounded-xl transition-all"><Edit3 size={18}/></button>
               </div>
               <h4 className="text-lg font-black text-slate-900">{sup.name}</h4>
               <p className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mt-1">{sup.contactPerson}</p>
               <div className="mt-6 pt-6 border-t border-slate-50 space-y-3">
-                <p className="text-xs text-slate-500 flex items-center gap-2"><Globe size={14}/> {sup.email}</p>
-                <p className="text-xs text-slate-500 flex items-center gap-2"><ArrowRight size={14}/> {sup.phone}</p>
+                <p className="text-xs text-slate-500 flex items-center gap-2"><Mail size={14}/> {sup.email}</p>
+                <p className="text-xs text-slate-500 flex items-center gap-2"><Phone size={14}/> {sup.phone}</p>
+                <p className="text-xs text-slate-500 flex items-center gap-2"><MapPin size={14}/> {sup.address}</p>
               </div>
             </div>
           ))}
+          {suppliers.length === 0 && (
+            <div className="col-span-full py-20 text-center space-y-4">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto border border-slate-100 text-slate-300"><Building2 size={40} /></div>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">No vendors registered in the supply chain.</p>
+              <button onClick={() => setIsSupplierModalOpen(true)} className="mt-2 text-indigo-600 text-xs font-black uppercase tracking-widest hover:underline">Register First Vendor</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -429,6 +563,17 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
         product={editingProduct}
         categories={categories}
         suppliers={suppliers}
+      />
+
+      <SupplierModal
+        isOpen={isSupplierModalOpen}
+        onClose={() => { setIsSupplierModalOpen(false); setEditingSupplier(null); }}
+        onSave={(s) => {
+          if (editingSupplier) setSuppliers(prev => prev.map(item => item.id === editingSupplier.id ? { ...s, id: editingSupplier.id } : item));
+          else setSuppliers(prev => [{ ...s, id: `SUP-${Date.now()}` }, ...prev]);
+          setIsSupplierModalOpen(false);
+        }}
+        supplier={editingSupplier}
       />
     </div>
   );

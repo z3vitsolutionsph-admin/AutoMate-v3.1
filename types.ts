@@ -113,6 +113,7 @@ export interface OnboardingState {
   businessName: string;
   businessType: string;
   generatedCategories: string[];
+  generatedProducts?: Product[]; // Added to support auto-stocking
   selectedPlan: PlanType;
   paymentMethod: string;
   adminName: string;

@@ -123,6 +123,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const controlsRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // --- Calculations ---
@@ -179,6 +180,25 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
       return [...prev, { ...product, quantity: 1 }];
     });
   }, [products]);
+
+  const updateQuantity = useCallback((id: string, delta: number) => {
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.id === id) {
+          const newQty = Math.max(0, item.quantity + delta);
+          // Only play sound on direct interaction not removal by 0
+          if (newQty > 0) playBeep('neutral'); 
+          return { ...item, quantity: newQty };
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    });
+  }, []);
+
+  const removeFromCart = useCallback((id: string) => {
+    setCart(prev => prev.filter(item => item.id !== id));
+    playBeep('neutral');
+  }, []);
 
   const holdOrder = () => {
     if (cart.length === 0) return;
@@ -256,30 +276,63 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
 
   const handlePrint = useCallback(() => {
     if (lastReceipt) {
-      // Small delay to ensure state is ready if called immediately
       setTimeout(() => window.print(), 50);
     }
   }, [lastReceipt]);
 
   const startScanning = async () => {
     setIsScanning(true);
+    setScanSuccess(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      // Use ZXing Browser MultiFormat Reader
       const reader = new BrowserMultiFormatReader();
-      await reader.decodeFromVideoElement(videoRef.current, (result) => {
+      
+      const constraints = {
+        video: { facingMode: 'environment' }
+      };
+
+      // Need to attach to video element
+      // Using decodeFromVideoDevice is more robust than getUserMedia manually with ZXing in some contexts
+      const controls = await reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => {
         if (result) {
           const code = result.getText();
           const p = products.find(prod => prod.id === code || prod.sku === code);
-          if (p) { setScanSuccess(true); addToCart(p); setTimeout(() => setScanSuccess(false), 600); }
-          else setSystemError({ code: 'SCAN_FAILURE', message: `Unknown SKU: ${code}`, timestamp: new Date() });
+          if (p) { 
+            setScanSuccess(true); 
+            addToCart(p); 
+            // Optional: short delay before next scan or auto-close
+             setTimeout(() => setScanSuccess(false), 1500);
+          } else {
+             // Avoid spamming error state
+             if (!scanSuccess) {
+                setSystemError({ code: 'SCAN_FAILURE', message: `Unknown SKU: ${code}`, timestamp: new Date() });
+             }
+          }
         }
       });
-    } catch (e) { setIsScanning(false); }
+      controlsRef.current = controls;
+    } catch (e) {
+      console.error(e);
+      setIsScanning(false); 
+    }
   };
 
-  const stopScanning = () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); setIsScanning(false); };
+  const stopScanning = () => { 
+    if (controlsRef.current) {
+      controlsRef.current.stop();
+      controlsRef.current = null;
+    }
+    setIsScanning(false); 
+  };
+
+  // Cleanup scanner on unmount
+  useEffect(() => {
+    return () => {
+      if (controlsRef.current) {
+        controlsRef.current.stop();
+      }
+    };
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const term = deferredSearchTerm.toLowerCase().trim();
@@ -295,26 +348,29 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
     <div className="h-[calc(100vh-8rem)] flex flex-col md:flex-row gap-8 relative font-sans animate-in fade-in duration-500">
       <style>{`
         @media print {
-          body * {
-            visibility: hidden;
-          }
-          #receipt-print-area, #receipt-print-area * {
-            visibility: visible;
-          }
-          #receipt-print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-            color: black;
-          }
-          @page {
-            margin: 0;
-            size: auto;
-          }
-          /* Hide standard UI elements specifically */
+          body * { visibility: hidden; }
+          #receipt-print-area, #receipt-print-area * { visibility: visible; }
+          #receipt-print-area { position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; }
+          @page { margin: 0; size: auto; }
           .no-print { display: none !important; }
+        }
+        /* Cart Item Animation */
+        .cart-item-enter { animation: slideInRight 0.3s ease-out forwards; }
+        .cart-item-exit { animation: slideOutLeft 0.3s ease-in forwards; }
+        .cart-quantity-bump { animation: pulseScale 0.2s ease-in-out; }
+        
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideOutLeft {
+          from { opacity: 1; transform: translateX(0); }
+          to { opacity: 0; transform: translateX(-20px); height: 0; margin: 0; padding: 0; }
+        }
+        @keyframes pulseScale {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
         }
       `}</style>
 
@@ -384,48 +440,48 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
           </div>
         </div>
 
-        {/* Dynamic Product Grid */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 custom-scrollbar pr-2 min-h-0">
-          {filteredProducts.length > 0 ? filteredProducts.map(p => (
-            <div 
-              key={p.id} 
-              onClick={() => addToCart(p)} 
-              className="bg-white border border-slate-200/80 rounded-[2.5rem] p-5 cursor-pointer hover:border-indigo-500 hover:shadow-[0_20px_40px_rgba(79,70,229,0.12)] hover:-translate-y-1.5 transition-all duration-500 flex flex-col group relative overflow-hidden"
-            >
-               <div className="aspect-square rounded-[2rem] bg-slate-50/50 mb-5 overflow-hidden relative flex items-center justify-center border border-slate-100/50 shadow-inner group-hover:bg-white transition-colors">
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={p.name}/> 
-                  ) : (
-                    <ChefHat size={36} className="text-slate-200 group-hover:text-indigo-200 group-hover:scale-110 transition-all duration-1000" />
-                  )}
-                  
-                  {/* Glassmorphic Stock Pill */}
-                  <div className={`absolute top-4 right-4 px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-xl backdrop-blur-xl border transition-all ${p.stock < 10 ? 'bg-rose-500/90 text-white border-rose-400/50 animate-pulse' : 'bg-slate-900/70 text-white border-white/20'}`}>
-                    <Boxes size={12} /> {p.stock}
-                  </div>
-                  
-                  {/* Subtle Glow Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/0 via-transparent to-transparent opacity-0 group-hover:opacity-20 transition-opacity" />
-               </div>
-               
-               <div className="flex-1 space-y-2">
-                 <h4 className="text-slate-900 font-extrabold text-[13px] truncate uppercase tracking-tight leading-tight">{p.name}</h4>
-                 <div className="flex items-center justify-between gap-2">
-                   <p className="text-indigo-600 text-sm font-black tracking-tight">{formatCurrency(p.price)}</p>
-                   <div className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${p.stock < 10 ? 'bg-rose-50 text-rose-500' : 'bg-slate-50 text-slate-400'}`}>
-                     {p.stock < 10 ? 'Alert' : 'Stable'}
+        {/* Masonry Product Grid */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0">
+          {filteredProducts.length > 0 ? (
+            <div className="columns-2 lg:columns-3 xl:columns-4 gap-5 space-y-5 pb-10">
+              {filteredProducts.map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => addToCart(p)} 
+                  className="break-inside-avoid bg-white border border-slate-200/80 rounded-[2.5rem] p-4 cursor-pointer hover:border-indigo-500 hover:shadow-[0_20px_40px_rgba(79,70,229,0.12)] hover:-translate-y-1 transition-all duration-300 flex flex-col group relative overflow-hidden"
+                >
+                   {/* Variable Height Image Logic: Simulate masonry feel with aspect ratio or padding */}
+                   <div className={`rounded-[2rem] bg-slate-50/50 mb-4 overflow-hidden relative flex items-center justify-center border border-slate-100/50 shadow-inner group-hover:bg-white transition-colors aspect-square`}>
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={p.name}/> 
+                      ) : (
+                        <ChefHat size={36} className="text-slate-200 group-hover:text-indigo-200 group-hover:scale-110 transition-all duration-1000" />
+                      )}
+                      
+                      {/* Glassmorphic Stock Pill */}
+                      <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1 shadow-xl backdrop-blur-xl border transition-all ${p.stock < 10 ? 'bg-rose-500/90 text-white border-rose-400/50 animate-pulse' : 'bg-slate-900/70 text-white border-white/20'}`}>
+                        <Boxes size={10} /> {p.stock}
+                      </div>
+                      
+                      {/* Subtle Glow Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                    </div>
-                 </div>
-               </div>
-               
-               <div className="mt-5 flex justify-end">
-                 <div className="w-10 h-10 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all transform group-hover:rotate-12 group-active:scale-90 shadow-sm">
-                   <Plus size={20} strokeWidth={3} />
-                 </div>
-               </div>
+                   
+                   <div className="flex-1 space-y-1.5 px-1">
+                     <h4 className="text-slate-900 font-extrabold text-xs uppercase tracking-tight leading-tight line-clamp-2">{p.name}</h4>
+                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{p.category}</p>
+                     <div className="flex items-center justify-between gap-2 pt-2">
+                       <p className="text-indigo-600 text-sm font-black tracking-tight">{formatCurrency(p.price)}</p>
+                       <div className="w-8 h-8 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all transform group-active:scale-90 shadow-sm">
+                         <Plus size={16} strokeWidth={3} />
+                       </div>
+                     </div>
+                   </div>
+                </div>
+              ))}
             </div>
-          )) : (
-            <div className="col-span-full py-24 text-center flex flex-col items-center gap-6 opacity-40 animate-in fade-in duration-700">
+          ) : (
+            <div className="h-full py-24 text-center flex flex-col items-center gap-6 opacity-40 animate-in fade-in duration-700">
                <div className="w-24 h-24 rounded-full border-4 border-dashed border-slate-200 flex items-center justify-center text-slate-200">
                   <SearchX size={48} />
                </div>
@@ -482,7 +538,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
          </div>
          
          {/* Items Area */}
-         <div className="flex-1 overflow-y-auto p-8 space-y-5 custom-scrollbar">
+         <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">
             {cart.length === 0 ? (
                <div className="h-full flex flex-col items-center justify-center text-slate-200 gap-8 opacity-30 animate-in fade-in duration-500">
                   <div className="w-28 h-28 rounded-full border-4 border-dashed border-slate-200 flex items-center justify-center animate-spin-slow">
@@ -495,33 +551,33 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
                </div>
             ) : (
                cart.map(item => (
-                  <div key={item.id} className="bg-white border border-slate-100 p-5 rounded-[1.75rem] flex flex-col gap-4 group hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all animate-in slide-in-from-right-4 duration-300">
+                  <div key={item.id} className="cart-item-enter bg-white border border-slate-100 p-4 rounded-[1.75rem] flex flex-col gap-3 group hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-500/5 transition-all">
                      <div className="flex justify-between items-start gap-4">
                         <div className="flex items-center gap-4 min-w-0">
-                           <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-inner">
-                              {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" alt={item.name} /> : <ChefHat size={24} className="text-slate-300" />}
+                           <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-inner">
+                              {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" alt={item.name} /> : <ChefHat size={20} className="text-slate-300" />}
                            </div>
                            <div className="min-w-0">
-                             <h5 className="text-slate-900 font-black text-[11px] truncate uppercase tracking-tight leading-none">{item.name}</h5>
-                             <p className="text-indigo-600 text-[10px] font-black mt-1.5">{formatCurrency(item.price)}</p>
+                             <h5 className="text-slate-900 font-black text-[10px] truncate uppercase tracking-tight leading-none">{item.name}</h5>
+                             <p className="text-indigo-600 text-[9px] font-black mt-1.5">{formatCurrency(item.price)}</p>
                            </div>
                         </div>
-                        <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
+                        <button onClick={() => removeFromCart(item.id)} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
                      </div>
-                     <div className="flex justify-between items-center pt-3 border-t border-slate-50/80">
-                        <div className="flex items-center bg-slate-50/80 rounded-full border border-slate-200 p-1">
+                     <div className="flex justify-between items-center pt-2 border-t border-slate-50/80">
+                        <div className="flex items-center bg-slate-50/80 rounded-full border border-slate-200 p-0.5 gap-1">
                            <button 
-                            onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0))} 
-                            className="w-8 h-8 flex items-center justify-center hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-all active:scale-75 shadow-sm"
+                            onClick={() => updateQuantity(item.id, -1)} 
+                            className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-all active:scale-75 shadow-sm"
                            >
-                             <Minus size={14} strokeWidth={3} />
+                             <Minus size={12} strokeWidth={3} />
                            </button>
-                           <span className="w-10 text-center text-xs font-black text-slate-900">{item.quantity}</span>
+                           <span className="w-8 text-center text-xs font-black text-slate-900 cart-quantity-bump" key={item.quantity}>{item.quantity}</span>
                            <button 
-                            onClick={() => addToCart(item)} 
-                            className="w-8 h-8 flex items-center justify-center hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-all active:scale-75 shadow-sm"
+                            onClick={() => updateQuantity(item.id, 1)} 
+                            className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-all active:scale-75 shadow-sm"
                            >
-                             <Plus size={14} strokeWidth={3} />
+                             <Plus size={12} strokeWidth={3} />
                            </button>
                         </div>
                         <span className="text-slate-900 font-black text-sm tabular-nums">{formatCurrency(item.price * item.quantity)}</span>

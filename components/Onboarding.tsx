@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles, CreditCard, ShieldCheck, Smartphone, Landmark, Zap, Gift, Building2, ChevronRight, ChevronLeft, ShieldAlert, Users, Rocket, Mail, Lock, Eye, EyeOff, Shield, Verified, Globe, Info, Landmark as Bank, AlertCircle } from 'lucide-react';
-import { OnboardingState, PlanType, SubscriptionPlan } from '../types';
-import { generateBusinessCategories } from '../services/geminiService';
+import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles, CreditCard, ShieldCheck, Smartphone, Landmark, Zap, Gift, Building2, ChevronRight, ChevronLeft, ShieldAlert, Users, Rocket, Mail, Lock, Eye, EyeOff, Shield, Verified, Globe, Info, Landmark as Bank, AlertCircle, Package, Image as ImageIcon } from 'lucide-react';
+import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
+import { generateBusinessCategories, generateProductImage } from '../services/geminiService';
 import { Logo } from './Logo';
 
 const PLANS: SubscriptionPlan[] = [
@@ -32,13 +32,36 @@ const PLANS: SubscriptionPlan[] = [
   }
 ];
 
+const SafeImage: React.FC<{ src?: string, alt: string }> = ({ src, alt }) => {
+  const [error, setError] = useState(false);
+  
+  if (!src || error) {
+    return (
+      <div className="flex items-center justify-center w-full h-full text-slate-300 bg-slate-50">
+        <ImageIcon size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={src} 
+      alt={alt} 
+      className="w-full h-full object-cover" 
+      onError={() => setError(true)} 
+    />
+  );
+};
+
 export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void }> = ({ onComplete }) => {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState('Initializing Intelligence...');
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
+  const [generatedProducts, setGeneratedProducts] = useState<Product[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('PROFESSIONAL');
   
   // Admin details
@@ -54,11 +77,51 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
 
   const handleStep0 = async () => {
     setIsLoading(true);
+    setLoadingText('Analyzing Market Vertical...');
     try {
+      // 1. Generate Categories
       const cats = await generateBusinessCategories(businessName, businessType);
       setCategories(cats);
+
+      // 2. Generate Sample Products (1 per category) with Stock 1
+      setLoadingText('Synthesizing Visual Assets & Inventory...');
+      
+      const productPromises = cats.map(async (cat, index) => {
+        let imageUrl = '';
+        try {
+          // Attempt to generate a high-quality image for the first 3 categories to save time/quota
+          // or for all if critical.
+          if (index < 3) {
+            imageUrl = await generateProductImage(`High quality commercial product photography of a representative ${cat} item for ${businessType}`);
+          }
+        } catch (e) {
+          console.warn('Auto-image generation failed, using placeholder', e);
+        }
+
+        return {
+          id: `GEN-${Date.now()}-${index}`,
+          name: `${cat} Starter Unit`,
+          sku: `AUTO-${1000 + index}`,
+          category: cat,
+          price: 1000,
+          stock: 1, // Requirement: Add one stock
+          imageUrl: imageUrl,
+          description: `Automatically initialized inventory item for ${cat} category.`
+        } as Product;
+      });
+
+      const products = await Promise.all(productPromises);
+      setGeneratedProducts(products);
+
       nextStep();
-    } finally { setIsLoading(false); }
+    } catch (error) {
+      console.error("AI Initialization failed", error);
+      // Fallback
+      setCategories(['General', 'Services']);
+      nextStep();
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const validateStep3 = () => {
@@ -110,7 +173,18 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
   };
 
   const handleFinalize = () => {
-    onComplete({ businessName, businessType, generatedCategories: categories, selectedPlan, paymentMethod: 'GCASH', adminName, adminEmail, adminPassword, isComplete: true });
+    onComplete({ 
+      businessName, 
+      businessType, 
+      generatedCategories: categories, 
+      generatedProducts: generatedProducts,
+      selectedPlan, 
+      paymentMethod: 'GCASH', 
+      adminName, 
+      adminEmail, 
+      adminPassword, 
+      isComplete: true 
+    });
   };
 
   return (
@@ -132,7 +206,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
         {step === 0 && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-500">
             <div className="text-center space-y-4">
-              <Logo className="h-16 mb-6 mx-auto" />
+              <Logo className="h-16 mb-6 mx-auto justify-center" />
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">AutoMate™ Setup</h2>
               <p className="text-slate-500 max-w-md mx-auto">Initialize your AutoMate™ instance for intelligent market operations.</p>
             </div>
@@ -142,7 +216,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
             </div>
             <div className="space-y-6">
               <button onClick={handleStep0} disabled={isLoading || !businessName} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3">
-                {isLoading ? <Loader2 className="animate-spin" /> : <>Initialize Intelligence <ArrowRight size={20} /></>}
+                {isLoading ? <><Loader2 className="animate-spin" size={20} /> <span className="text-xs uppercase tracking-widest">{loadingText}</span></> : <>Initialize Intelligence <ArrowRight size={20} /></>}
               </button>
               <p className="text-center text-[8px] font-bold text-slate-400 uppercase tracking-widest">
                 © 2024 AutoMate Systems Global. Neural Ledger Technology™
@@ -153,12 +227,34 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
 
         {step === 1 && (
           <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-500 text-center">
-            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100 text-indigo-600"><Wand2 size={32} /></div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Neural Mapping</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {categories.map((cat, i) => <div key={i} className="bg-slate-50 border border-slate-100 p-5 rounded-2xl text-slate-900 font-bold text-sm shadow-sm">{cat}</div>)}
+            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100 text-indigo-600 shadow-xl shadow-indigo-100"><Sparkles size={32} /></div>
+            <div className="space-y-3">
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">AI Generated Product Category</h2>
+              <p className="text-slate-500 text-xs font-medium max-w-lg mx-auto leading-relaxed">
+                System has auto-detected relevant market categories and initialized <span className="text-indigo-600 font-bold">1 unit of stock</span> per category with AI-synthesized imagery.
+              </p>
             </div>
-            <button onClick={nextStep} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl shadow-xl transition-all">Select Tier</button>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+              {generatedProducts.map((prod, i) => (
+                <div key={i} className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col items-center gap-4 group hover:border-indigo-300 transition-all">
+                  <div className="w-full aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative">
+                    <SafeImage src={prod.imageUrl} alt={prod.name} />
+                    <div className="absolute top-2 right-2 bg-slate-900/80 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest backdrop-blur-md">
+                      Stock: {prod.stock}
+                    </div>
+                  </div>
+                  <div className="text-center w-full">
+                    <div className="text-slate-900 font-bold text-xs truncate">{prod.category}</div>
+                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Auto-Generated</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <button onClick={nextStep} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl shadow-xl transition-all flex items-center justify-center gap-2">
+              Confirm Protocol <Check size={18} strokeWidth={3} />
+            </button>
           </div>
         )}
 

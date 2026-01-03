@@ -190,6 +190,12 @@ const App: React.FC = () => {
     setUsers([adminUser]);
     setSubscriptionPlan(data.selectedPlan);
     
+    // Ingest Generated Products (Initial Stock)
+    if (data.generatedProducts && data.generatedProducts.length > 0) {
+      setProducts(data.generatedProducts);
+      saveToStorage(KEYS.PRODUCTS, data.generatedProducts);
+    }
+    
     // Set Trial Start if Starter Plan
     if (data.selectedPlan === 'STARTER') {
        const now = new Date().toISOString();
