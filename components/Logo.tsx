@@ -1,43 +1,46 @@
 import React from 'react';
 
-export const Logo: React.FC<{ className?: string }> = ({ className = "w-10 h-10" }) => (
-  <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <defs>
-      <linearGradient id="grad_a" x1="20" y1="85" x2="80" y2="15" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#2563eb" /> {/* blue-600 */}
-        <stop offset="1" stopColor="#0ea5e9" /> {/* cyan-500 */}
-      </linearGradient>
-      <linearGradient id="grad_swoosh" x1="15" y1="50" x2="95" y2="35" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#06b6d4" />
-        <stop offset="1" stopColor="#60a5fa" />
-      </linearGradient>
-      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="2" result="blur" />
-        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-      </filter>
-    </defs>
-    
-    {/* A Shape with hole */}
-    <path 
-      fillRule="evenodd" 
-      clipRule="evenodd" 
-      d="M50 15L20 85H35L42.5 65H57.5L65 85H80L50 15ZM50 38L45 53H55L50 38Z" 
-      fill="url(#grad_a)" 
-    />
-    
-    {/* Orbit Swoosh */}
-    <path 
-      d="M15 65 C 5 65, 5 45, 25 35 C 50 22, 85 22, 95 45" 
-      stroke="url(#grad_swoosh)" 
-      strokeWidth="5" 
-      strokeLinecap="round" 
-    />
-    
-    {/* Star */}
-    <path 
-      d="M85 15 L88 22 L95 25 L88 28 L85 35 L82 28 L75 25 L82 22 Z" 
-      fill="#fbbf24" 
-      filter="url(#glow)"
-    />
-  </svg>
+export const Logo: React.FC<{ className?: string, showText?: boolean }> = ({ className = "w-10 h-10", showText = false }) => (
+  <div className={`flex items-center gap-3 ${className}`}>
+    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-auto drop-shadow-sm">
+      <defs>
+        <linearGradient id="logo_grad_indigo" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#4F46E5" />
+          <stop offset="1" stopColor="#6366F1" />
+        </linearGradient>
+        <linearGradient id="logo_grad_emerald" x1="50" y1="0" x2="50" y2="100" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#10B981" />
+          <stop offset="1" stopColor="#059669" />
+        </linearGradient>
+        <filter id="node_glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+
+      {/* Main Structural 'A' - Left Pillar (Core Ledger) */}
+      <path d="M35 85V35L50 15" stroke="url(#logo_grad_indigo)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+      
+      {/* Right Pillar - Barcode Pattern (Inventory/POS) */}
+      <path d="M65 85V45" stroke="#0F172A" strokeWidth="8" strokeLinecap="round" />
+      <path d="M78 85V55" stroke="#0F172A" strokeWidth="4" strokeLinecap="round" />
+      <path d="M54 85V30" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
+
+      {/* Neural Link - The Spark (Intelligence) */}
+      <circle cx="50" cy="15" r="6" fill="url(#logo_grad_emerald)" filter="url(#node_glow)">
+        <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />
+      </circle>
+      
+      {/* Connector Line */}
+      <path d="M50 15L65 45" stroke="url(#logo_grad_indigo)" strokeWidth="2" strokeDasharray="4 4" />
+    </svg>
+    {showText && (
+      <div className="flex flex-col leading-none">
+        <span className="text-xl font-black text-slate-900 tracking-tighter flex items-center">
+          AutoMate<span className="text-[10px] font-bold self-start ml-0.5 text-indigo-500">™</span>
+        </span>
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Intelligence</span>
+      </div>
+    )}
+  </div>
 );

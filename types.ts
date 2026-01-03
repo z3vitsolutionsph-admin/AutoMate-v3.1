@@ -17,6 +17,18 @@ export enum UserRole {
   EMPLOYEE = 'EMPLOYEE'
 }
 
+export interface SystemUser {
+  id: string;
+  name: string;
+  email: string;
+  password?: string; // Stored for session validation
+  role: UserRole;
+  status: 'Active' | 'Inactive';
+  lastLogin?: Date;
+  avatar?: string;
+  createdAt?: Date;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -45,13 +57,31 @@ export interface CartItem extends Product {
 export interface Transaction {
   id: string;
   date: string; // Format: YYYY-MM-DD
-  product: string;
+  productId?: string;
+  product: string; // Name
   category: string;
   location: string;
   amount: number;
   status: 'Completed' | 'Processing' | 'Refunded';
   quantity?: number;
-  paymentMethod?: 'Cash' | 'GCash' | 'PayMaya' | 'QRPH' | 'Card';
+  paymentMethod?: 'Cash' | 'GCash' | 'PayMaya' | 'QRPH' | 'Card' | 'Stripe' | 'PayPal' | 'PayMongo';
+}
+
+export interface HeldOrder {
+  id: string;
+  items: CartItem[];
+  timestamp: Date;
+  customerName?: string;
+}
+
+export interface ReceiptData {
+  transactionId: string;
+  items: CartItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  paymentMethod: string;
+  date: string;
 }
 
 export interface ReorderSuggestion {
@@ -77,24 +107,25 @@ export interface ChatMessage {
 }
 
 // Onboarding Types
+export type PlanType = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
+
 export interface OnboardingState {
-  currentStep: number;
-  isComplete: boolean;
-  selectedPlan: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM' | null;
   businessName: string;
   businessType: string;
   generatedCategories: string[];
-  gates: {
-    employeeSet: boolean;
-    categorySet: boolean; 
-    inventorySet: boolean;
-  };
+  selectedPlan: PlanType;
+  paymentMethod: string;
+  adminName: string;
+  adminEmail: string;
+  adminPassword?: string;
+  isComplete: boolean;
 }
 
 export interface SubscriptionPlan {
-  id: string;
+  id: PlanType;
   name: string;
   price: number;
+  employeeLimit: number | 'Unlimited';
   features: string[];
   recommended?: boolean;
   color: string;
@@ -103,7 +134,7 @@ export interface SubscriptionPlan {
 // Accounting & Integration Types
 export interface IntegrationConfig {
   id: string;
-  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB';
+  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB' | 'FACEBOOK' | 'INSTAGRAM' | 'TIKTOK';
   name: string;
   status: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
   lastSync?: Date;
@@ -112,7 +143,7 @@ export interface IntegrationConfig {
 
 export interface SyncLog {
   id: string;
-  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB';
+  provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB' | 'FACEBOOK' | 'INSTAGRAM' | 'TIKTOK';
   action: string;
   status: 'SUCCESS' | 'FAILURE';
   timestamp: Date;

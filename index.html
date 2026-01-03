@@ -11,65 +11,97 @@
     <style>
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #020617; /* slate-950 */
-        color: #f1f5f9; /* slate-100 */
+        background-color: #f8fafc; /* slate-50 */
+        color: #0f172a; /* slate-900 */
       }
       
-      /* Glassmorphism Utilities */
+      /* Modern UI Utilities */
       .glass-panel {
-        background: rgba(15, 23, 42, 0.6);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
       }
       
-      .glass-card {
-        background: rgba(30, 41, 59, 0.4);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+      .surface-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
       }
 
-      /* Custom Scrollbar */
+      /* Custom Scrollbar - Light Mode */
       ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+        width: 8px;
+        height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: transparent; 
+        background: #f1f5f9; 
       }
       ::-webkit-scrollbar-thumb {
-        background: #334155; 
+        background: #cbd5e1; 
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #475569; 
+        background: #94a3b8; 
       }
 
-      /* Animations */
-      @keyframes float {
-        0% { transform: translateY(0px); }
-        50% { transform: translateY(-20px); }
-        100% { transform: translateY(0px); }
-      }
-      
-      .animate-float {
-        animation: float 6s ease-in-out infinite;
-      }
-      
-      .animate-float-delayed {
-        animation: float 8s ease-in-out infinite;
-        animation-delay: 2s;
+      /* Transitions */
+      .page-transition {
+        animation: fadeIn 0.4s ease-out;
       }
 
-      @keyframes pulse-glow {
-        0%, 100% { opacity: 0.5; transform: scale(1); }
-        50% { opacity: 0.8; transform: scale(1.05); }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
       
       .bg-grid-pattern {
-        background-image: linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-                          linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+        background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px),
+                          linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
         background-size: 40px 40px;
+      }
+
+      /* Keyframes for new UI features */
+      @keyframes wiggle {
+        0%, 100% { transform: rotate(-3deg); }
+        50% { transform: rotate(3deg); }
+      }
+      .animate-wiggle {
+        animation: wiggle 0.5s ease-in-out infinite;
+      }
+
+      @keyframes pulse-subtle {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.95; }
+      }
+      .animate-pulse-subtle {
+        animation: pulse-subtle 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse-reticle {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(1.02); }
+      }
+      .animate-pulse-reticle {
+        animation: pulse-reticle 1.5s ease-in-out infinite;
+      }
+
+      @keyframes scan {
+        0% { transform: translateY(-100%); opacity: 0; }
+        50% { opacity: 1; }
+        100% { transform: translateY(100%); opacity: 0; }
+      }
+      .animate-scan {
+        animation: scan 2s linear infinite;
+      }
+
+      @keyframes spin-slow {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .animate-spin-slow {
+        animation: spin-slow 8s linear infinite;
       }
     </style>
     <script type="importmap">

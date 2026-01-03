@@ -1,254 +1,264 @@
 import React, { useState } from 'react';
-import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles } from 'lucide-react';
-import { OnboardingState } from '../types';
+import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles, CreditCard, ShieldCheck, Smartphone, Landmark, Zap, Gift, Building2, ChevronRight, ChevronLeft, ShieldAlert, Users, Rocket, Mail, Lock, Eye, EyeOff, Shield, Verified, Globe, Info, Landmark as Bank, AlertCircle } from 'lucide-react';
+import { OnboardingState, PlanType, SubscriptionPlan } from '../types';
 import { generateBusinessCategories } from '../services/geminiService';
 import { Logo } from './Logo';
 
-interface OnboardingProps {
-  onComplete: (data: OnboardingState) => void;
-}
+const PLANS: SubscriptionPlan[] = [
+  { 
+    id: 'STARTER', 
+    name: 'Starter', 
+    price: 0, 
+    employeeLimit: 1, 
+    features: ['5-Day Free Trial', 'Core POS Terminal', 'Basic Inventory Audit', '1 User Seat', 'Standard Reports'], 
+    color: 'border-slate-200 hover:border-indigo-300' 
+  },
+  { 
+    id: 'PROFESSIONAL', 
+    name: 'Professional', 
+    price: 4999, 
+    employeeLimit: 5, 
+    features: ['Advanced AI Insights', '5 User Seats', 'Affiliate & Promoter Hub', 'Multi-Store Support (3)', 'Priority Email Support'], 
+    recommended: true, 
+    color: 'border-indigo-600 shadow-indigo-100 shadow-xl bg-indigo-50/20' 
+  },
+  { 
+    id: 'ENTERPRISE', 
+    name: 'Enterprise', 
+    price: 9999, 
+    employeeLimit: 'Unlimited', 
+    features: ['Unlimited Nodes Sync', 'Neural Demand Forecasting', 'Dedicated Success Manager', 'Custom API Access', '24/7 Priority Support'], 
+    color: 'border-blue-600 hover:bg-blue-50/20 shadow-blue-100' 
+  }
+];
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void }> = ({ onComplete }) => {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // Step 1: Business Info
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
-
-  // Step 2: Categories
   const [categories, setCategories] = useState<string[]>([]);
-  const [generatedCats, setGeneratedCats] = useState<string[]>([]);
-
-  // Step 3: Admin Info
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>('PROFESSIONAL');
+  
+  // Admin details
   const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+
+  // Validation State
+  const [errors, setErrors] = useState<{name?: string, email?: string, password?: string}>({});
 
   const nextStep = () => setStep(prev => prev + 1);
   const prevStep = () => setStep(prev => prev - 1);
 
-  const handleStart = async () => {
-    if (!businessName.trim()) {
-      setErrors({ businessName: 'Business name is required' });
-      return;
-    }
-    if (!businessType.trim()) {
-      setErrors({ businessType: 'Business type is required' });
-      return;
-    }
-    
+  const handleStep0 = async () => {
     setIsLoading(true);
-    setErrors({});
-    
     try {
       const cats = await generateBusinessCategories(businessName, businessType);
-      setGeneratedCats(cats);
-      setCategories(cats); // Default select all
-      setStep(1);
-    } catch (error) {
-      setErrors({ general: 'Failed to generate categories. Please try again.' });
-    } finally {
-      setIsLoading(false);
-    }
+      setCategories(cats);
+      nextStep();
+    } finally { setIsLoading(false); }
   };
 
-  const handleCategorySelection = () => {
-    if (categories.length === 0) {
-      setErrors({ categories: 'Select at least one category' });
-      return;
+  const validateStep3 = () => {
+    const newErrors: {name?: string, email?: string, password?: string} = {};
+    let isValid = true;
+
+    // Name Validation: No numbers allowed
+    if (!adminName.trim()) {
+      newErrors.name = "Admin Name is required.";
+      isValid = false;
+    } else if (/\d/.test(adminName)) {
+      newErrors.name = "Proper name required. Numbers are not permitted.";
+      isValid = false;
     }
-    setStep(2);
+
+    // Email Validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!adminEmail.trim()) {
+      newErrors.email = "Email Address is required.";
+      isValid = false;
+    } else if (!emailRegex.test(adminEmail)) {
+      newErrors.email = "Please enter a valid email address.";
+      isValid = false;
+    }
+
+    // Master Key Validation: 5 to 8 digits
+    const keyRegex = /^\d{5,8}$/;
+    if (!adminPassword.trim()) {
+      newErrors.password = "Master Key is required.";
+      isValid = false;
+    } else if (!keyRegex.test(adminPassword)) {
+      newErrors.password = "Master Key must be 5 to 8 digits (numeric only).";
+      isValid = false;
+    }
+
+    setErrors(newErrors);
+    return isValid;
+  };
+
+  const handleVerifyDeployment = () => {
+    if (validateStep3()) {
+      setIsCreatingProfile(true);
+      // Simulate secure profile creation latency
+      setTimeout(() => {
+        setIsCreatingProfile(false);
+        nextStep();
+      }, 2500);
+    }
   };
 
   const handleFinalize = () => {
-    if (!adminName.trim()) {
-      setErrors({ adminName: 'Admin name is required' });
-      return;
-    }
-
-    const finalState: OnboardingState = {
-      currentStep: 3,
-      isComplete: true,
-      selectedPlan: 'PROFESSIONAL',
-      businessName,
-      businessType,
-      generatedCategories: categories,
-      gates: {
-        employeeSet: true,
-        categorySet: true,
-        inventorySet: true
-      }
-    };
-    onComplete(finalState);
-  };
-
-  const toggleCategory = (cat: string) => {
-    if (categories.includes(cat)) {
-      setCategories(prev => prev.filter(c => c !== cat));
-    } else {
-      setCategories(prev => [...prev, cat]);
-    }
+    onComplete({ businessName, businessType, generatedCategories: categories, selectedPlan, paymentMethod: 'GCASH', adminName, adminEmail, adminPassword, isComplete: true });
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Elements */}
-      <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[100px]"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-amber-600/10 rounded-full blur-[100px]"></div>
-
-      <div className="w-full max-w-2xl relative z-10">
-        
-        {/* Progress Bar */}
-        <div className="mb-8 flex justify-between items-center px-2">
-           {[0, 1, 2].map(i => (
-             <div key={i} className={`flex items-center ${i < 2 ? 'flex-1' : ''}`}>
-               <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-500 ${step >= i ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'bg-[#18181b] border border-[#27272a] text-zinc-500'}`}>
-                 {step > i ? <Check size={20} /> : i + 1}
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 font-sans selection:bg-indigo-100">
+      <div className="w-full max-w-4xl mb-12">
+        <div className="flex justify-between items-center px-4 max-w-2xl mx-auto">
+          {[0, 1, 2, 3, 4].map(i => (
+            <div key={i} className={`flex items-center ${i < 4 ? 'flex-1' : ''}`}>
+               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all duration-500 ${step >= i ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white border border-slate-200 text-slate-300'}`}>
+                 {step > i ? <Check size={18} strokeWidth={3} /> : i + 1}
                </div>
-               {i < 2 && (
-                 <div className={`flex-1 h-1 mx-4 rounded-full transition-all duration-500 ${step > i ? 'bg-amber-500' : 'bg-[#27272a]'}`}></div>
-               )}
-             </div>
-           ))}
-        </div>
-
-        {/* Step 1: Business Identity */}
-        {step === 0 && (
-          <div className="bg-[#18181b] border border-[#27272a] p-8 rounded-3xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500">
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 bg-[#27272a] rounded-2xl flex items-center justify-center mx-auto mb-6 border border-[#3f3f46] shadow-inner">
-                <Logo className="w-10 h-10" />
-              </div>
-              <h2 className="text-2xl font-bold text-white">Let's set up your store</h2>
-              <p className="text-zinc-400 mt-2">Tell us about your business to personalize your experience.</p>
+               {i < 4 && <div className={`flex-1 h-1 mx-3 rounded-full ${step > i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>}
             </div>
+          ))}
+        </div>
+      </div>
 
+      <div className="w-full max-w-4xl bg-white border border-slate-200 p-12 md:p-16 rounded-[3rem] shadow-2xl relative overflow-hidden transition-all">
+        {step === 0 && (
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-500">
+            <div className="text-center space-y-4">
+              <Logo className="h-16 mb-6 mx-auto" />
+              <h2 className="text-4xl font-black text-slate-900 tracking-tight">AutoMate™ Setup</h2>
+              <p className="text-slate-500 max-w-md mx-auto">Initialize your AutoMate™ instance for intelligent market operations.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Store Designation</label><input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50" placeholder="e.g. Apex Retail" /></div>
+              <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Market Segment</label><input value={businessType} onChange={e => setBusinessType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50" placeholder="e.g. Fashion" /></div>
+            </div>
             <div className="space-y-6">
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Business Name</label>
-                <div className="relative group">
-                   <Store className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-amber-500 transition-colors" size={18} />
-                   <input 
-                    type="text" 
-                    value={businessName}
-                    onChange={(e) => { setBusinessName(e.target.value); setErrors(prev => ({...prev, businessName: ''})); }}
-                    className={`w-full bg-[#09090b] border ${errors.businessName ? 'border-rose-500' : 'border-[#27272a]'} rounded-xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all`}
-                    placeholder="e.g. Urban Cafe & Co."
-                   />
-                </div>
-                {errors.businessName && <p className="text-rose-500 text-xs mt-1 ml-1">{errors.businessName}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Business Type</label>
-                <div className="relative group">
-                   <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-amber-500 transition-colors" size={18} />
-                   <input 
-                    type="text" 
-                    value={businessType}
-                    onChange={(e) => { setBusinessType(e.target.value); setErrors(prev => ({...prev, businessType: ''})); }}
-                    className={`w-full bg-[#09090b] border ${errors.businessType ? 'border-rose-500' : 'border-[#27272a]'} rounded-xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all`}
-                    placeholder="e.g. Coffee Shop, Retail, Salon"
-                   />
-                </div>
-                {errors.businessType && <p className="text-rose-500 text-xs mt-1 ml-1">{errors.businessType}</p>}
-              </div>
-              
-              <button 
-                onClick={handleStart}
-                disabled={isLoading}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-amber-900/20 transition-all flex items-center justify-center gap-2 mt-4 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? <Loader2 className="animate-spin" /> : <>Continue <ArrowRight size={20} /></>}
+              <button onClick={handleStep0} disabled={isLoading || !businessName} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3">
+                {isLoading ? <Loader2 className="animate-spin" /> : <>Initialize Intelligence <ArrowRight size={20} /></>}
               </button>
+              <p className="text-center text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                © 2024 AutoMate Systems Global. Neural Ledger Technology™
+              </p>
             </div>
           </div>
         )}
 
-        {/* Step 2: AI Categories */}
         {step === 1 && (
-          <div className="bg-[#18181b] border border-[#27272a] p-8 rounded-3xl shadow-2xl animate-in fade-in slide-in-from-right-8 duration-500">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-purple-500/10 text-purple-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-purple-500/20">
-                <Wand2 size={32} />
-              </div>
-              <h2 className="text-2xl font-bold text-white">AI Generated Categories</h2>
-              <p className="text-zinc-400 mt-2">We used Gemini AI to suggest categories for <b>{businessName}</b>.</p>
+          <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-500 text-center">
+            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100 text-indigo-600"><Wand2 size={32} /></div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Neural Mapping</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {categories.map((cat, i) => <div key={i} className="bg-slate-50 border border-slate-100 p-5 rounded-2xl text-slate-900 font-bold text-sm shadow-sm">{cat}</div>)}
             </div>
+            <button onClick={nextStep} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl shadow-xl transition-all">Select Tier</button>
+          </div>
+        )}
 
-            <div className="grid grid-cols-2 gap-3 mb-8 max-h-[300px] overflow-y-auto pr-2">
-              {generatedCats.map((cat, idx) => (
-                <div 
-                  key={idx}
-                  onClick={() => toggleCategory(cat)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center justify-between group ${categories.includes(cat) ? 'bg-amber-500/10 border-amber-500 text-white' : 'bg-[#09090b] border-[#27272a] text-zinc-400 hover:border-zinc-500'}`}
-                >
-                  <span className="font-medium text-sm">{cat}</span>
-                  {categories.includes(cat) && <Check size={16} className="text-amber-500" />}
+        {step === 2 && (
+          <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-500">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center">System Scalability</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {PLANS.map(p => (
+                <div key={p.id} onClick={() => setSelectedPlan(p.id)} className={`p-8 rounded-[2rem] border-2 cursor-pointer transition-all flex flex-col h-full relative ${selectedPlan === p.id ? p.color : 'border-slate-100 hover:border-indigo-200 bg-slate-50 opacity-60'}`}>
+                  {p.id === 'STARTER' && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest whitespace-nowrap shadow-lg">
+                      5-Day Free Trial
+                    </div>
+                  )}
+                  <h4 className="font-black text-slate-900 uppercase text-xs mb-2">{p.name}</h4>
+                  <p className="text-2xl font-black text-slate-900">₱{p.price.toLocaleString()}</p>
+                  <ul className="mt-6 space-y-3 flex-1">
+                    {p.features.map((f, i) => <li key={i} className="text-[10px] text-slate-500 font-bold flex items-center gap-2"><Check size={12} className="text-emerald-500 shrink-0" /> {f}</li>)}
+                  </ul>
+                  {p.recommended && (
+                    <div className="mt-4 pt-4 border-t border-indigo-100 w-full text-center">
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Recommended</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-            {errors.categories && <p className="text-rose-500 text-center mb-4 text-sm">{errors.categories}</p>}
-
-            <div className="flex gap-4">
-              <button onClick={prevStep} className="flex-1 py-4 rounded-xl font-bold text-zinc-400 hover:bg-[#27272a] transition-colors">Back</button>
-              <button 
-                onClick={handleCategorySelection}
-                className="flex-[2] bg-amber-500 hover:bg-amber-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-amber-900/20 transition-all"
-              >
-                Confirm Selection ({categories.length})
-              </button>
-            </div>
+            <button onClick={nextStep} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl shadow-xl transition-all">Set Access Protocol</button>
           </div>
         )}
 
-        {/* Step 3: Admin Setup */}
-        {step === 2 && (
-          <div className="bg-[#18181b] border border-[#27272a] p-8 rounded-3xl shadow-2xl animate-in fade-in slide-in-from-right-8 duration-500">
-             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
-                <User size={32} />
-              </div>
-              <h2 className="text-2xl font-bold text-white">Administrator Access</h2>
-              <p className="text-zinc-400 mt-2">Create the primary account to manage your store.</p>
-            </div>
-
-            <div className="space-y-6">
-               <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Admin Name</label>
-                <div className="relative group">
-                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-blue-500 transition-colors" size={18} />
-                   <input 
-                    type="text" 
-                    value={adminName}
-                    onChange={(e) => { setAdminName(e.target.value); setErrors(prev => ({...prev, adminName: ''})); }}
-                    className={`w-full bg-[#09090b] border ${errors.adminName ? 'border-rose-500' : 'border-[#27272a]'} rounded-xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-blue-500/50 outline-none transition-all`}
-                    placeholder="Full Name"
-                   />
-                </div>
-                {errors.adminName && <p className="text-rose-500 text-xs mt-1 ml-1">{errors.adminName}</p>}
-              </div>
-
-               <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 flex gap-3">
-                  <Sparkles className="text-blue-500 shrink-0" size={20} />
-                  <p className="text-xs text-blue-200/80 leading-relaxed">
-                    By clicking "Finish Setup", you agree to initialize the system with the selected AI-generated configurations.
-                  </p>
+        {step === 3 && (
+           <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-500 max-w-lg mx-auto">
+             {isCreatingProfile ? (
+               <div className="flex flex-col items-center justify-center py-12 text-center space-y-8 animate-in zoom-in-95 duration-500">
+                  <div className="relative">
+                    <div className="w-24 h-24 rounded-full border-4 border-slate-100 border-t-indigo-600 animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <User size={32} className="text-indigo-600" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Creating Profile</h3>
+                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest animate-pulse">Encrypting Master Key & Provisioning Access...</p>
+                  </div>
                </div>
+             ) : (
+               <>
+                 <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center">Master Authority</h2>
+                 <div className="space-y-5">
+                    <div className="space-y-1">
+                      <input 
+                        value={adminName} 
+                        onChange={e => { setAdminName(e.target.value); setErrors({...errors, name: undefined}); }} 
+                        className={`w-full bg-slate-50 border rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 transition-all ${errors.name ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-200 focus:ring-indigo-50'}`} 
+                        placeholder="Admin Name" 
+                      />
+                      {errors.name && <div className="flex items-center gap-2 text-[10px] font-bold text-rose-500 px-2 animate-in slide-in-from-top-1"><AlertCircle size={10} /> {errors.name}</div>}
+                    </div>
 
-               <div className="flex gap-4">
-                  <button onClick={prevStep} className="flex-1 py-4 rounded-xl font-bold text-zinc-400 hover:bg-[#27272a] transition-colors">Back</button>
-                  <button 
-                    onClick={handleFinalize}
-                    className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-900/20 transition-all"
-                  >
-                    Finish Setup
-                  </button>
-               </div>
-            </div>
-          </div>
+                    <div className="space-y-1">
+                      <input 
+                        type="email" 
+                        value={adminEmail} 
+                        onChange={e => { setAdminEmail(e.target.value); setErrors({...errors, email: undefined}); }} 
+                        className={`w-full bg-slate-50 border rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 transition-all ${errors.email ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-200 focus:ring-indigo-50'}`} 
+                        placeholder="Email Address" 
+                      />
+                      {errors.email && <div className="flex items-center gap-2 text-[10px] font-bold text-rose-500 px-2 animate-in slide-in-from-top-1"><AlertCircle size={10} /> {errors.email}</div>}
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <input 
+                        type="password" 
+                        value={adminPassword} 
+                        onChange={e => { setAdminPassword(e.target.value); setErrors({...errors, password: undefined}); }} 
+                        className={`w-full bg-slate-50 border rounded-2xl p-5 text-slate-900 outline-none font-mono focus:ring-4 transition-all ${errors.password ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-200 focus:ring-indigo-50'}`} 
+                        placeholder="Master Key" 
+                        maxLength={8}
+                      />
+                      {errors.password && <div className="flex items-center gap-2 text-[10px] font-bold text-rose-500 px-2 animate-in slide-in-from-top-1"><AlertCircle size={10} /> {errors.password}</div>}
+                      {!errors.password && <div className="px-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Requirement: 5 to 8 numeric digits</div>}
+                    </div>
+                 </div>
+                 <button onClick={handleVerifyDeployment} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl shadow-xl transition-all">Verify Deployment</button>
+               </>
+             )}
+           </div>
         )}
 
+        {step === 4 && (
+          <div className="text-center space-y-10 py-8 animate-in zoom-in-95 duration-700">
+            <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 shadow-xl border border-emerald-100"><Check size={56} strokeWidth={4} /></div>
+            <div>
+              <h2 className="text-4xl font-black text-slate-900 mb-4">Core Systems Ready</h2>
+              <p className="text-slate-500 max-w-sm mx-auto">AutoMate™ has provisioned your instance at <span className="text-indigo-600 font-black">{businessName}</span>.</p>
+            </div>
+            <button onClick={handleFinalize} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-6 rounded-[2.5rem] shadow-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-sm">Deploy AutoMate™ <Rocket size={20} /></button>
+          </div>
+        )}
       </div>
     </div>
   );

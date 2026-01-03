@@ -1,14 +1,13 @@
-
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, User, KeyRound, Box, Store, Bot, BarChart3 } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, Loader2, KeyRound, Box, Store, Bot, BarChart3 } from 'lucide-react';
 import { Logo } from './Logo';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLoginSuccess: (email: string, pass: string) => boolean;
   businessName?: string;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, businessName }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, businessName }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -18,169 +17,91 @@ export const Login: React.FC<LoginProps> = ({ onLogin, businessName }) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-    
     setTimeout(() => {
-      if (!email || !password) {
-         setIsLoading(false);
-         setError("Please enter valid credentials.");
-         return;
+      const success = onLoginSuccess(email, password);
+      if (!success) {
+        setError("Invalid credentials. Please verify your access protocol.");
+        setIsLoading(false);
       }
-      setIsLoading(false);
-      onLogin();
-    }, 1000);
+    }, 1200);
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex overflow-hidden font-sans">
-       
-       {/* Left Panel - Marketing (Hidden on mobile) */}
-       <div className="hidden lg:flex lg:w-1/2 bg-slate-900 relative items-center justify-center p-12 overflow-hidden border-r border-[#27272a]">
-          {/* Background effects */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-950"></div>
-          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl"></div>
+    <div className="min-h-screen bg-slate-50 flex overflow-hidden font-sans">
+       <div className="hidden lg:flex lg:w-1/2 bg-indigo-600 relative items-center justify-center p-16 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500 via-indigo-600 to-indigo-700"></div>
+          <div className="absolute top-0 left-0 w-full h-full bg-grid-pattern opacity-[0.1]"></div>
           
-          <div className="relative z-10 max-w-xl space-y-10 animate-in fade-in slide-in-from-left-8 duration-700">
-             <div>
-                <h1 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-6">
-                  Modern System Designed for <br/>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">Retail Success</span>
-                </h1>
-                <div className="h-1.5 w-24 bg-blue-500 rounded-full mb-8"></div>
-                
-                <p className="text-slate-400 text-lg leading-relaxed mb-4">
-                   AutoMateSystem is a comprehensive inventory management and point-of-sale solution built specifically for retail businesses in the Philippines.
-                </p>
-                <p className="text-slate-400 text-lg leading-relaxed">
-                   The system combines real-time operations with intelligent automation, providing businesses with the tools they need to streamline operations, reduce manual work, and make data-driven decisions.
-                </p>
+          <div className="relative z-10 max-w-lg space-y-12 animate-in fade-in slide-in-from-left-8 duration-700 text-white">
+             <div className="space-y-6">
+                <div className="flex items-center gap-3 bg-white/10 border border-white/20 w-fit px-4 py-2 rounded-full backdrop-blur-md">
+                   <ShieldCheck size={16} className="text-indigo-200" />
+                   <span className="text-[10px] font-black uppercase tracking-[0.2em]">Verified Terminal Node</span>
+                </div>
+                <h1 className="text-6xl font-black leading-tight tracking-tight">AutoMate™ <br/>Business <span className="text-indigo-200 underline decoration-indigo-400/50 decoration-4">Intelligence</span></h1>
+                <p className="text-indigo-100 text-lg font-medium leading-relaxed opacity-90">Experience the world-class engine for modern retail. Scalable architecture powered by predictive AI.</p>
              </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                <div className="flex gap-4 items-start">
-                   <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
-                      <Box size={24} />
+             <div className="grid grid-cols-2 gap-8">
+                {[
+                  { icon: Box, label: "Asset Flow" },
+                  { icon: Store, label: "Omni-Store" },
+                  { icon: Bot, label: "AI Oracle" },
+                  { icon: BarChart3, label: "Live Ledger" }
+                ].map((item, i) => (
+                   <div key={i} className="flex gap-4 items-center group cursor-default">
+                      <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-white group-hover:bg-white group-hover:text-indigo-600 transition-all">
+                         <item.icon size={24} />
+                      </div>
+                      <h3 className="font-bold text-sm tracking-wide">{item.label}</h3>
                    </div>
-                   <div>
-                      <h3 className="text-white font-bold text-sm mb-1">Real-Time Inventory</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed">Live stock synchronization across all locations</p>
-                   </div>
-                </div>
-
-                <div className="flex gap-4 items-start">
-                   <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
-                      <Store size={24} />
-                   </div>
-                   <div>
-                      <h3 className="text-white font-bold text-sm mb-1">Multi-Store Management</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed">Centralized control with location-specific inventory</p>
-                   </div>
-                </div>
-
-                <div className="flex gap-4 items-start">
-                   <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
-                      <Bot size={24} />
-                   </div>
-                   <div>
-                      <h3 className="text-white font-bold text-sm mb-1">AI-Driven Insights</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed">Smart product categorization and reorder suggestions</p>
-                   </div>
-                </div>
-
-                <div className="flex gap-4 items-start">
-                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                      <BarChart3 size={24} />
-                   </div>
-                   <div>
-                      <h3 className="text-white font-bold text-sm mb-1">Robust Reporting</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed">Comprehensive analytics with PDF/CSV export</p>
-                   </div>
-                </div>
+                ))}
              </div>
           </div>
        </div>
 
-       {/* Right Panel - Login Form */}
-       <div className="w-full lg:w-1/2 flex items-center justify-center p-4 relative bg-[#09090b]">
-          {/* Mobile Background */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900/50 via-[#09090b] to-[#09090b] lg:hidden"></div>
-
+       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative bg-slate-50">
           <div className="w-full max-w-md relative z-10">
-            <div className="bg-[#18181b] border border-[#27272a] p-8 rounded-3xl shadow-2xl">
-              <div className="text-center mb-8">
-                <div className="w-20 h-20 mx-auto mb-6 bg-[#27272a] rounded-full flex items-center justify-center border border-[#3f3f46] shadow-inner">
-                  <Logo className="w-10 h-10" />
-                </div>
-                <h1 className="text-2xl font-bold text-white mb-2">Employee Login</h1>
-                <p className="text-zinc-500 text-sm">
-                  Enter your credentials to access <br/>
-                  <span className="text-amber-500 font-semibold">{businessName || 'AutoMate System'}</span>
-                </p>
+            <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+              <div className="text-center mb-12 flex flex-col items-center">
+                <Logo className="h-16 mb-4" />
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center">
+                  AutoMate<span className="text-xs font-bold self-start text-indigo-500">™</span>
+                </h1>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-3">Node: <span className="text-indigo-600 font-black">{businessName}</span></p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (
-                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl flex items-center gap-2 text-sm">
-                    <AlertCircle size={16} />
-                    {error}
+                  <div className="bg-rose-50 border border-rose-100 text-rose-600 px-5 py-4 rounded-2xl flex items-center gap-3 text-xs font-bold animate-in shake duration-300">
+                    <AlertCircle size={18} className="shrink-0" /> {error}
                   </div>
                 )}
                 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">Email / ID</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Operator ID</label>
                   <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <User className="h-5 w-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
-                    </div>
-                    <input 
-                      type="text" 
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-[#09090b] border border-[#27272a] text-white text-sm rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 block w-full pl-12 p-4 outline-none transition-all placeholder-zinc-600"
-                      placeholder="Enter your ID"
-                    />
+                    <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
+                    <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(null); }} className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-base rounded-2xl pl-14 p-5 outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:text-slate-300" placeholder="admin@automate.ph" required />
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">Password</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Secure Key</label>
                   <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <KeyRound className="h-5 w-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
-                    </div>
-                    <input 
-                      type="password" 
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-[#09090b] border border-[#27272a] text-white text-sm rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 block w-full pl-12 p-4 outline-none transition-all placeholder-zinc-600 font-mono tracking-widest"
-                      placeholder="••••••••"
-                    />
+                    <KeyRound className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
+                    <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(null); }} className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-base rounded-2xl pl-14 p-5 outline-none focus:ring-4 focus:ring-indigo-50 transition-all font-mono" placeholder="••••••••" required />
                   </div>
                 </div>
 
-                <button 
-                  type="submit" 
-                  disabled={isLoading}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-amber-900/20 transition-all flex items-center justify-center gap-2 mt-4 hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                      Verifying...
-                    </>
-                  ) : (
-                    <>
-                      Start Shift <ArrowRight size={18} strokeWidth={2.5} />
-                    </>
-                  )}
+                <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
+                  {isLoading ? <><Loader2 className="animate-spin" size={20} /> Validating...</> : <>Unlock Terminal <ArrowRight size={20} /></>}
                 </button>
               </form>
             </div>
-            
-            <div className="text-center mt-6">
-               <p className="text-zinc-600 text-xs mb-2">Need help? Contact Administrator</p>
-               <p className="text-zinc-700 text-[10px] font-bold uppercase tracking-widest">Powered by Z3VITPH</p>
-            </div>
-         </div>
+            <p className="text-center mt-10 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
+              Precision Core v3.2.0 © 2024 AutoMate Global
+            </p>
+          </div>
        </div>
     </div>
   );

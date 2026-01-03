@@ -3,7 +3,6 @@ import { Users, DollarSign, Award, Target, Calculator, Calendar, CheckCircle2, C
 import { StatCard } from './StatCard';
 import { formatCurrency, PROMOTER_TIERS } from '../constants';
 
-// Mock Data for Referrals
 interface Referral {
   id: number;
   clientName: string;
@@ -24,216 +23,104 @@ export const Promoter: React.FC = () => {
   const [salesVolume, setSalesVolume] = useState(50000);
   const [activeReferrals, setActiveReferrals] = useState(10);
   
-  // Calculate earnings dynamically
   const currentTier = PROMOTER_TIERS.slice().reverse().find(t => salesVolume >= t.minSales) || PROMOTER_TIERS[0];
   const baseCommission = salesVolume * currentTier.commissionRate;
-  const recurringIncome = activeReferrals * 500; // Mock calculation: 500 PHP per active referral
+  const recurringIncome = activeReferrals * 500; 
   const bonus = salesVolume > 100000 ? 5000 : 0;
   const totalEarnings = baseCommission + recurringIncome + bonus;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Promoter Dashboard</h2>
-          <p className="text-slate-400">Track referrals, commissions, and calculate potential earnings.</p>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Affiliate Hub</h2>
+          <p className="text-slate-500 text-sm mt-1">Manage referrals, track earnings, and optimize your network.</p>
         </div>
-        <div className="bg-slate-800 px-4 py-2 rounded-lg border border-slate-700 flex items-center gap-2">
-          <span className="text-slate-400 text-sm">Current Tier:</span>
-          <span className={`font-bold uppercase ${currentTier.color}`}>{currentTier.name}</span>
+        <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 flex items-center gap-3 shadow-sm">
+          <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Active Rank:</span>
+          <span className="font-black text-indigo-600 uppercase text-xs tracking-widest">{currentTier.name}</span>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Referrals" value="124" icon={<Users size={20} />} trend="up" trendValue="12%" />
-        <StatCard title="Total Earnings" value={formatCurrency(452500)} icon={<DollarSign size={20} />} trend="up" trendValue="8%" />
-        <StatCard title="Conversion Rate" value="24.5%" icon={<Target size={20} />} trend="down" trendValue="2%" />
-        <StatCard title="Active Links" value="8" icon={<Award size={20} />} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="Total Referrals" value="124" icon={<Users size={20} />} trend="up" trendValue="12%" colorTheme="blue" />
+        <StatCard title="Accrued Earnings" value={formatCurrency(452500)} icon={<DollarSign size={20} />} trend="up" trendValue="8%" colorTheme="indigo" />
+        <StatCard title="Conversion" value="24.5%" icon={<Target size={20} />} trend="neutral" trendValue="0%" colorTheme="emerald" />
+        <StatCard title="Global Rank" value="Top 5%" icon={<Award size={20} />} colorTheme="amber" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Earnings Calculator */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
-              <Calculator size={24} />
-            </div>
-            <h3 className="text-xl font-bold text-white">Earnings Calculator</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-8">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 border border-indigo-100"><Calculator size={24} /></div>
+            <h3 className="text-xl font-bold text-slate-900">Earnings Estimator</h3>
           </div>
 
-          <div className="space-y-6">
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm text-slate-400">Monthly Sales Volume</label>
-                <span className="text-white font-mono">{formatCurrency(salesVolume)}</span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="1000000" 
-                step="5000" 
-                value={salesVolume}
-                onChange={(e) => setSalesVolume(Number(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-              />
-              <div className="flex justify-between text-xs text-slate-500 mt-1">
-                <span>₱0</span>
-                <span>₱1,000,000</span>
-              </div>
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Target</label><span className="text-slate-900 font-black">{formatCurrency(salesVolume)}</span></div>
+              <input type="range" min="0" max="1000000" step="5000" value={salesVolume} onChange={(e) => setSalesVolume(Number(e.target.value))} className="w-full h-2 bg-slate-100 rounded-full appearance-none cursor-pointer accent-indigo-600" />
             </div>
 
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm text-slate-400">Active Referrals</label>
-                <span className="text-white font-mono">{activeReferrals} clients</span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                step="1" 
-                value={activeReferrals}
-                onChange={(e) => setActiveReferrals(Number(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-              />
+            <div className="space-y-4">
+              <div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Base</label><span className="text-slate-900 font-black">{activeReferrals} Active</span></div>
+              <input type="range" min="0" max="100" step="1" value={activeReferrals} onChange={(e) => setActiveReferrals(Number(e.target.value))} className="w-full h-2 bg-slate-100 rounded-full appearance-none cursor-pointer accent-indigo-600" />
             </div>
 
-            <div className="bg-slate-900 rounded-xl p-4 space-y-3 border border-slate-700/50">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Commission Rate ({Math.round(currentTier.commissionRate * 100)}%)</span>
-                <span className="text-white">{formatCurrency(baseCommission)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Recurring Income</span>
-                <span className="text-white">{formatCurrency(recurringIncome)}</span>
-              </div>
-               <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Bonuses</span>
-                <span className="text-emerald-400">{formatCurrency(bonus)}</span>
-              </div>
-              <div className="pt-3 border-t border-slate-700 flex justify-between items-center">
-                <span className="font-bold text-white">Estimated Monthly</span>
-                <span className="text-2xl font-bold text-cyan-400">{formatCurrency(totalEarnings)}</span>
-              </div>
+            <div className="bg-slate-50 rounded-2xl p-6 space-y-4 border border-slate-100">
+              <div className="flex justify-between text-xs font-bold text-slate-500"><span>Rate ({Math.round(currentTier.commissionRate * 100)}%)</span><span className="text-slate-900">{formatCurrency(baseCommission)}</span></div>
+              <div className="flex justify-between text-xs font-bold text-slate-500"><span>Recurring</span><span className="text-slate-900">{formatCurrency(recurringIncome)}</span></div>
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center"><span className="font-black text-slate-900 uppercase text-[10px] tracking-widest">Est. Monthly Payload</span><span className="text-3xl font-black text-indigo-600">{formatCurrency(totalEarnings)}</span></div>
             </div>
           </div>
         </div>
 
-        {/* Incentive Structure */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl">
-           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-purple-500/20 rounded-lg text-purple-400">
-              <Award size={24} />
-            </div>
-            <h3 className="text-xl font-bold text-white">Commission Tiers</h3>
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-6">
+           <div className="flex items-center gap-3">
+            <div className="p-3 bg-amber-50 rounded-2xl text-amber-600 border border-amber-100"><Award size={24} /></div>
+            <h3 className="text-xl font-bold text-slate-900">Rank Structure</h3>
           </div>
           
           <div className="space-y-4">
             {PROMOTER_TIERS.map((tier) => (
-              <div 
-                key={tier.name} 
-                className={`p-4 rounded-lg border transition-all ${
-                  currentTier.name === tier.name 
-                    ? 'bg-slate-700/50 border-cyan-500/50 ring-1 ring-cyan-500/50' 
-                    : 'bg-slate-900/30 border-slate-700/50 opacity-75'
-                }`}
-              >
+              <div key={tier.name} className={`p-5 rounded-2xl border transition-all ${currentTier.name === tier.name ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-100 opacity-60'}`}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <h4 className={`font-bold ${tier.color}`}>{tier.name} Tier</h4>
-                    <p className="text-xs text-slate-400">Min Sales: {formatCurrency(tier.minSales)}</p>
+                    <h4 className="font-black text-slate-900 uppercase text-xs tracking-widest">{tier.name} Tier</h4>
+                    <p className="text-[10px] text-slate-400 font-bold mt-1">Target: {formatCurrency(tier.minSales)}</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-xl font-bold text-white">{tier.commissionRate * 100}%</span>
-                    <p className="text-xs text-slate-400">Commission</p>
+                    <span className="text-2xl font-black text-slate-900">{tier.commissionRate * 100}%</span>
                   </div>
                 </div>
-                {/* Progress bar to next tier */}
-                {currentTier.name === tier.name && tier.name !== 'Platinum' && (
-                  <div className="mt-3">
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
-                      <span>Progress to next tier</span>
-                      <span>{Math.min(100, Math.round((salesVolume / PROMOTER_TIERS[PROMOTER_TIERS.indexOf(tier) + 1].minSales) * 100))}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-cyan-500 rounded-full" 
-                        style={{ width: `${Math.min(100, (salesVolume / PROMOTER_TIERS[PROMOTER_TIERS.indexOf(tier) + 1].minSales) * 100)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Recent Referrals Table */}
-      <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl backdrop-blur-md">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-cyan-500/10 rounded-lg text-cyan-400">
-              <Users size={24} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white">Recent Referrals</h3>
-              <p className="text-xs text-slate-400">Latest client signups via your link</p>
-            </div>
-          </div>
-          <button className="flex items-center gap-2 text-sm text-cyan-400 hover:text-white font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-slate-800">
-             View All <ArrowRight size={14} />
-          </button>
+      <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h3 className="text-lg font-bold text-slate-900">Recent Referrals</h3>
+          <button className="text-xs font-black text-indigo-600 uppercase tracking-widest">History Log</button>
         </div>
-
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead>
-              <tr className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-800/80">
-                <th className="py-4 px-4 pl-0">Client Name</th>
-                <th className="py-4 px-4">Date Joined</th>
-                <th className="py-4 px-4 text-center">Status</th>
-                <th className="py-4 px-4 text-right pr-0">Commission</th>
+              <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-slate-50/30">
+                <th className="p-6">Client Identity</th>
+                <th className="p-6">Registry Date</th>
+                <th className="p-6 text-center">Protocol State</th>
+                <th className="p-6 text-right">Commission</th>
               </tr>
             </thead>
-            <tbody className="text-sm divide-y divide-slate-800/50">
+            <tbody className="text-sm divide-y divide-slate-50">
               {RECENT_REFERRALS.map((ref) => (
-                <tr key={ref.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="py-4 px-4 pl-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 group-hover:text-cyan-400 group-hover:border-cyan-500/30 transition-all">
-                        <User size={18} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-white group-hover:text-cyan-400 transition-colors">{ref.clientName}</div>
-                        <div className="text-[10px] text-slate-500">ID: REF-{202300 + ref.id}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 text-slate-400">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} className="text-slate-500" />
-                      {new Date(ref.dateJoined).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm ${
-                      ref.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                      ref.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                      'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                    }`}>
-                      {ref.status === 'Active' && <CheckCircle2 size={12} />}
-                      {ref.status === 'Pending' && <Clock size={12} />}
-                      {ref.status === 'Cancelled' && <XCircle size={12} />}
-                      {ref.status}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 pr-0 text-right">
-                    <span className={`font-bold text-base ${ref.commission > 0 ? 'text-white' : 'text-slate-600'}`}>
-                      {ref.commission > 0 ? formatCurrency(ref.commission) : '—'}
-                    </span>
-                  </td>
+                <tr key={ref.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-6"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400"><User size={20} /></div><span className="font-bold text-slate-900">{ref.clientName}</span></div></td>
+                  <td className="p-6 text-slate-500 font-medium">{new Date(ref.dateJoined).toLocaleDateString()}</td>
+                  <td className="p-6 text-center"><span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${ref.status === 'Active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : ref.status === 'Pending' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>{ref.status}</span></td>
+                  <td className="p-6 text-right font-bold text-slate-900">{ref.commission > 0 ? formatCurrency(ref.commission) : '—'}</td>
                 </tr>
               ))}
             </tbody>
