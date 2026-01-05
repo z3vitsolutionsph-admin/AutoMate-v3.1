@@ -9,10 +9,11 @@ import {
   MapPin, PhoneCall, MessageSquare, Save, RefreshCw, AlertCircle, Building2,
   Filter, ChevronDown, Boxes, User, Archive, Bookmark, Sparkle, ShoppingBasket,
   FileText, ListChecks, ChevronUp, GripHorizontal, Delete, Wifi, Percent, Tag,
-  Settings2, Volume2, VolumeX, CreditCard as CardIcon
+  Settings2, Volume2, VolumeX, CreditCard as CardIcon, Download
 } from 'lucide-react';
 import { Product, CartItem, Transaction, HeldOrder } from '../types';
 import { formatCurrency } from '../constants';
+import { jsPDF } from 'jspdf';
 
 interface POSProps {
   products: Product[];
@@ -100,6 +101,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
   const [showDiscountInput, setShowDiscountInput] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
   const [lastReceipt, setLastReceipt] = useState<any>(null);
+  const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   
   // Mobile UI
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -188,6 +190,97 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
   const resetTerminal = () => {
     setCart([]); setCashTendered(''); setShowPaymentModal(false); setPaymentPhase('METHOD_SELECT');
     setDiscountPercentage(terminalConfig.defaultDiscount);
+    setShowReceiptPreview(false);
+  };
+
+  const handleDownloadPDF = () => {
+    if (!lastReceipt) return;
+    
+    // 80mm width standard for thermal, variable height
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: [80, 200]
+    });
+
+    let y = 10;
+    const centerX = 40;
+    const leftX = 5;
+    const rightX = 75;
+    const lineHeight = 4;
+
+    // Header
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(businessDetails?.name || 'AutoMate Terminal', centerX, y, { align: 'center' });
+    y += lineHeight;
+    
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    if (businessDetails?.address) {
+       doc.text(businessDetails.address, centerX, y, { align: 'center' });
+       y += lineHeight;
+    }
+    
+    doc.text(new Date(lastReceipt.date).toLocaleString(), centerX, y, { align: 'center' });
+    y += lineHeight + 2;
+    
+    doc.setLineDash([1, 1], 0);
+    doc.line(leftX, y, rightX, y);
+    y += lineHeight + 2;
+
+    // Items
+    doc.setFontSize(8);
+    lastReceipt.items.forEach((item: any) => {
+        const title = item.name.substring(0, 25).toUpperCase();
+        doc.text(title, leftX, y);
+        const priceStr = formatCurrency(item.price * item.quantity);
+        doc.text(priceStr, rightX, y, { align: 'right' });
+        y += lineHeight;
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text(`${item.quantity} x ${formatCurrency(item.price)}`, leftX, y);
+        doc.setTextColor(0);
+        doc.setFontSize(8);
+        y += lineHeight + 1;
+    });
+
+    y += 2;
+    doc.line(leftX, y, rightX, y);
+    y += lineHeight + 2;
+
+    // Totals
+    const drawRow = (label: string, value: string, bold = false) => {
+        doc.setFont("helvetica", bold ? "bold" : "normal");
+        doc.text(label, leftX, y);
+        doc.text(value, rightX, y, { align: 'right' });
+        y += lineHeight;
+    };
+
+    drawRow("SUBTOTAL", formatCurrency(lastReceipt.subtotal));
+    if (lastReceipt.discountAmount > 0) {
+        drawRow("DISCOUNT", `-${formatCurrency(lastReceipt.discountAmount)}`);
+    }
+    drawRow("TAX", formatCurrency(lastReceipt.tax));
+    y += 2;
+    drawRow("TOTAL", formatCurrency(lastReceipt.total), true);
+    
+    y += lineHeight;
+    drawRow("PAYMENT", lastReceipt.paymentMethod);
+    if (lastReceipt.paymentMethod === 'Cash') {
+        drawRow("CASH", formatCurrency(parseFloat(lastReceipt.cashTendered) || 0));
+        drawRow("CHANGE", formatCurrency(lastReceipt.changeDue));
+    }
+
+    // Footer
+    y += lineHeight + 4;
+    doc.setFontSize(7);
+    doc.text(businessDetails?.footerMessage || 'Thank you!', centerX, y, { align: 'center' });
+    y += lineHeight;
+    doc.text(`Ref: ${lastReceipt.id}`, centerX, y, { align: 'center' });
+
+    doc.save(`Receipt-${lastReceipt.id}.pdf`);
   };
 
   const filteredProducts = products.filter(p => 
@@ -504,7 +597,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
                          <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.4em] mb-12 max-w-[280px] mx-auto leading-relaxed">Registry Synced • Store Nodes Updated Consistent</p>
                          
                          <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-                            <button onClick={() => window.print()} className="py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 flex items-center justify-center gap-2 transition-all"><Printer size={18}/> Print Receipt</button>
+                            <button onClick={() => setShowReceiptPreview(true)} className="py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 flex items-center justify-center gap-2 transition-all"><Printer size={18}/> Print Receipt</button>
                             <button onClick={resetTerminal} className="py-5 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">New Session</button>
                          </div>
                       </div>
@@ -579,6 +672,69 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* RECEIPT PREVIEW MODAL */}
+      {showReceiptPreview && lastReceipt && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden w-full max-w-sm flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+               <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Receipt Preview</h3>
+               <button onClick={() => setShowReceiptPreview(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} className="text-slate-500"/></button>
+             </div>
+             
+             <div className="flex-1 overflow-y-auto p-8 bg-slate-50 custom-scrollbar">
+               <div className="bg-white p-6 shadow-sm border border-slate-200 mx-auto max-w-[300px] text-[10px] font-mono leading-relaxed text-slate-900">
+                  <div className="text-center mb-6 space-y-1">
+                    <h1 className="text-lg font-black uppercase">{businessDetails?.name || 'AutoMate Terminal'}</h1>
+                    <p className="opacity-70 uppercase">{businessDetails?.address}</p>
+                    <p className="opacity-60">{new Date(lastReceipt.date).toLocaleString()}</p>
+                  </div>
+                  <div className="border-b border-slate-300 border-dashed mb-4"></div>
+                  <div className="space-y-2">
+                    {lastReceipt.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between items-start uppercase">
+                        <div className="flex-1 pr-2">
+                            <span className="font-bold">{item.name}</span>
+                            <div className="opacity-60">{item.quantity} x {formatCurrency(item.price)}</div>
+                        </div>
+                        <div className="font-bold">{formatCurrency(item.price * item.quantity)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-b border-slate-300 border-dashed my-4"></div>
+                  <div className="space-y-1 font-bold">
+                     <div className="flex justify-between"><span>SUBTOTAL</span><span>{formatCurrency(lastReceipt.subtotal)}</span></div>
+                     {lastReceipt.discountAmount > 0 && <div className="flex justify-between"><span>DISCOUNT</span><span>-{formatCurrency(lastReceipt.discountAmount)}</span></div>}
+                     <div className="flex justify-between"><span>TAX</span><span>{formatCurrency(lastReceipt.tax)}</span></div>
+                     <div className="flex justify-between text-sm pt-2 border-t border-slate-900 mt-2"><span>TOTAL</span><span>{formatCurrency(lastReceipt.total)}</span></div>
+                  </div>
+                  <div className="mt-4 pt-2 border-t border-slate-300 border-dashed space-y-1 opacity-80 font-bold">
+                    <div className="flex justify-between"><span>PAYMENT</span><span>{lastReceipt.paymentMethod}</span></div>
+                    {lastReceipt.paymentMethod === 'Cash' && (
+                      <>
+                        <div className="flex justify-between"><span>CASH</span><span>{formatCurrency(parseFloat(lastReceipt.cashTendered) || 0)}</span></div>
+                        <div className="flex justify-between"><span>CHANGE</span><span>{formatCurrency(lastReceipt.changeDue)}</span></div>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-8 text-center opacity-60 space-y-1">
+                    <p>{businessDetails?.footerMessage || 'Thank you!'}</p>
+                    <p>Ref: {lastReceipt.id}</p>
+                  </div>
+               </div>
+             </div>
+
+             <div className="p-6 border-t border-slate-100 bg-white grid grid-cols-2 gap-4">
+                <button onClick={handleDownloadPDF} className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-colors">
+                  <Download size={16}/> PDF
+                </button>
+                <button onClick={() => window.print()} className="py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-200">
+                  <Printer size={16}/> Print
+                </button>
+             </div>
+          </div>
         </div>
       )}
 

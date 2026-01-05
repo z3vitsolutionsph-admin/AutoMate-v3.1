@@ -9,6 +9,7 @@ interface SettingsProps {
   setSyncLogs: React.Dispatch<React.SetStateAction<SyncLog[]>>;
   users: SystemUser[];
   setUsers: React.Dispatch<React.SetStateAction<SystemUser[]>>;
+  onSaveUser?: (user: SystemUser) => Promise<void>;
   subscriptionPlan: PlanType;
 }
 
@@ -18,7 +19,7 @@ const PLAN_LIMITS: Record<PlanType, number> = {
   'ENTERPRISE': Infinity
 };
 
-export const Settings: React.FC<SettingsProps> = ({ integrations, setIntegrations, syncLogs, setSyncLogs, users, setUsers, subscriptionPlan }) => {
+export const Settings: React.FC<SettingsProps> = ({ integrations, setIntegrations, syncLogs, setSyncLogs, users, setUsers, onSaveUser, subscriptionPlan }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'users'>('integrations');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [userData, setUserData] = useState({ name: '', email: '', password: '' });
@@ -81,15 +82,18 @@ export const Settings: React.FC<SettingsProps> = ({ integrations, setIntegration
         return;
     }
     
+    let userToSave: SystemUser;
+
     if (editingUserId) {
-      setUsers(prev => prev.map(u => u.id === editingUserId ? {
-        ...u,
+      const existing = users.find(u => u.id === editingUserId);
+      userToSave = {
+        ...existing!,
         name: userData.name,
         email: userData.email,
         password: userData.password
-      } : u));
+      };
     } else {
-      const user: SystemUser = {
+      userToSave = {
         id: `USR-${Date.now()}`,
         name: userData.name,
         email: userData.email,
@@ -99,7 +103,17 @@ export const Settings: React.FC<SettingsProps> = ({ integrations, setIntegration
         lastLogin: undefined,
         createdAt: new Date()
       };
-      setUsers(prev => [...prev, user]);
+    }
+
+    if (onSaveUser) {
+       onSaveUser(userToSave);
+    } else {
+       // Legacy Fallback
+       if (editingUserId) {
+          setUsers(prev => prev.map(u => u.id === editingUserId ? userToSave : u));
+       } else {
+          setUsers(prev => [...prev, userToSave]);
+       }
     }
     
     setIsUserModalOpen(false);
