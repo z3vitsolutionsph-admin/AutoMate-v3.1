@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Check, ArrowRight, User, Loader2, Sparkles, Lock, AlertCircle, Rocket, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Check, ArrowRight, User, Loader2, Sparkles, Lock, AlertCircle, Rocket, Image as ImageIcon, Briefcase, Building2, ShieldCheck, Terminal, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
 import { generateBusinessCategories, generateProductImage } from '../services/geminiService';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
@@ -12,7 +12,14 @@ const PLANS: SubscriptionPlan[] = [
     name: 'Starter', 
     price: 0, 
     employeeLimit: 1, 
-    features: ['5-Day Free Trial', 'Core POS Terminal', 'Basic Inventory Audit', '1 User Seat', 'Standard Reports'], 
+    features: [
+      '5-Day Free Trial', 
+      'Single Store Node',
+      'Core POS Terminal', 
+      'Basic Inventory Audit', 
+      '1 User Seat', 
+      'Standard Reports'
+    ], 
     color: 'border-slate-200 hover:border-indigo-300' 
   },
   { 
@@ -20,7 +27,14 @@ const PLANS: SubscriptionPlan[] = [
     name: 'Professional', 
     price: 4999, 
     employeeLimit: 5, 
-    features: ['Advanced AI Insights', '5 User Seats', 'Affiliate & Promoter Hub', 'Multi-Store Support (3)', 'Priority Email Support'], 
+    features: [
+      'Advanced AI Insights', 
+      '5 User Seats', 
+      'Affiliate & Promoter Hub', 
+      'Multi-Store Support (3)', 
+      'Priority Email Support',
+      'Loyalty Program'
+    ], 
     recommended: true, 
     color: 'border-indigo-600 shadow-indigo-100 shadow-xl bg-indigo-50/20' 
   },
@@ -29,7 +43,14 @@ const PLANS: SubscriptionPlan[] = [
     name: 'Enterprise', 
     price: 9999, 
     employeeLimit: 'Unlimited', 
-    features: ['Unlimited Nodes Sync', 'Neural Demand Forecasting', 'Dedicated Success Manager', 'Custom API Access', '24/7 Priority Support'], 
+    features: [
+      'Unlimited Nodes Sync', 
+      'Neural Demand Forecasting', 
+      'Dedicated Success Manager', 
+      'Custom API Access', 
+      '24/7 Priority Support',
+      'White-Label Options'
+    ], 
     color: 'border-blue-600 hover:bg-blue-50/20 shadow-blue-100' 
   }
 ];
@@ -44,35 +65,62 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Initializing Intelligence...');
-  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
-  const [isDeploying, setIsDeploying] = useState(false);
-  const [deploymentStatus, setDeploymentStatus] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
+  // Data State
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
   const [generatedProducts, setGeneratedProducts] = useState<Product[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('PROFESSIONAL');
+  
+  // Admin State
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
-  const [errors, setErrors] = useState<{name?: string, email?: string, password?: string}>({});
+  
+  // Validation & Error Handling
+  const [errors, setErrors] = useState<{name?: string, email?: string, password?: string, business?: string}>({});
+  const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
 
-  const nextStep = () => setStep(prev => prev + 1);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (step === 4 && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [deploymentLogs, step]);
+
+  const addLog = (msg: string) => setDeploymentLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+
+  const nextStep = () => {
+    setErrors({});
+    setStep(prev => prev + 1);
+  };
 
   const handleStep0 = async () => {
+    if (!businessName.trim() || !businessType.trim()) {
+      setErrors({ business: "Please provide both Business Name and Market Segment." });
+      return;
+    }
+
     setIsLoading(true);
     setLoadingText('Analyzing Market Vertical...');
+    
     try {
       const cats = await generateBusinessCategories(businessName, businessType);
       setCategories(cats);
-      setLoadingText('Synthesizing Visual Assets & Inventory...');
       
-      const productPromises = cats.map(async (cat, index) => {
+      setLoadingText('Synthesizing Visual Assets & Inventory...');
+      // Generate initial inventory based on categories
+      const productPromises = cats.slice(0, 3).map(async (cat, index) => {
         let imageUrl = '';
         try {
-          if (index < 3) imageUrl = await generateProductImage(`High quality commercial product photography of a representative ${cat} item for ${businessType}`);
-        } catch (e) { console.warn('Auto-image generation failed', e); }
+          imageUrl = await generateProductImage(`High quality commercial product photography of a representative ${cat} item for ${businessType}. Minimalist studio background.`);
+        } catch (e) { 
+          console.warn('Auto-image generation failed, falling back to placeholder.', e); 
+        }
 
         return {
           id: `GEN-${Date.now()}-${index}`,
@@ -80,9 +128,9 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
           sku: `AUTO-${1000 + index}`,
           category: cat,
           price: 1000,
-          stock: 1,
+          stock: 10, // Give some initial stock
           imageUrl: imageUrl,
-          description: `Automatically initialized inventory item for ${cat} category.`
+          description: `Automatically initialized inventory item for ${cat} category. Ready for sales.`
         } as Product;
       });
 
@@ -91,166 +139,389 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
       nextStep();
     } catch (error) {
       console.error("AI Initialization failed", error);
-      setCategories(['General', 'Services']);
+      // Fallback if AI fails completely
+      setCategories(['General', 'Services', 'Retail']);
       nextStep();
-    } finally { setIsLoading(false); }
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const validateStep3 = () => {
     const newErrors: {name?: string, email?: string, password?: string} = {};
     let isValid = true;
-    if (!adminName.trim() || /\d/.test(adminName)) { newErrors.name = "Proper name required."; isValid = false; }
-    if (!adminEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) { newErrors.email = "Valid email required."; isValid = false; }
-    if (!adminPassword.trim() || !/^\d{5,8}$/.test(adminPassword)) { newErrors.password = "Key must be 5-8 digits."; isValid = false; }
+    
+    if (!adminName.trim() || adminName.length < 3) { 
+      newErrors.name = "Full name required (min 3 chars)."; 
+      isValid = false; 
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!adminEmail.trim() || !emailRegex.test(adminEmail)) { 
+      newErrors.email = "Valid email address required."; 
+      isValid = false; 
+    }
+    
+    if (!adminPassword.trim() || !/^\d{5,8}$/.test(adminPassword)) { 
+      newErrors.password = "Secure Key must be 5-8 numeric digits."; 
+      isValid = false; 
+    }
+    
     setErrors(newErrors);
     return isValid;
   };
 
   const handleVerifyDeployment = () => {
     if (validateStep3()) {
-      setIsCreatingProfile(true);
-      setTimeout(() => { setIsCreatingProfile(false); nextStep(); }, 2000);
+      nextStep(); // Move to Step 4 (Deployment Terminal)
+      handleFinalize(); // Auto-start deployment
     }
   };
 
   const handleFinalize = async () => {
-    setIsDeploying(true);
-    setDeploymentStatus('Connecting to Cloud Database...');
+    setDeploymentLogs([]);
+    setDeploymentError(null);
+    addLog("Initializing deployment sequence...");
+    
     const resultState = { 
       businessName, businessType, generatedCategories: categories, generatedProducts, selectedPlan, 
       paymentMethod: 'GCASH', adminName, adminEmail, adminPassword, isComplete: true 
     };
 
     try {
-      // 1. Check Supabase Config BEFORE attempting connection
+      // 1. Connectivity Check
+      addLog("Checking cloud node connectivity...");
       if (!isSupabaseConfigured()) {
-        throw new Error("Cloud credentials not configured. Switching to Offline Mode.");
+        addLog("WARNING: Cloud credentials missing.");
+        throw new Error("Supabase URL/Key not configured in environment.");
       }
+      addLog("Cloud node reachable.");
 
+      // 2. Business Creation
+      addLog(`Provisioning organization: ${businessName}...`);
       const { data: businessData, error: businessError } = await supabase
         .from('businesses')
         .insert([{ name: businessName, type: businessType, subscription_plan: selectedPlan }])
         .select().single();
 
-      if (businessError) throw new Error(businessError.message);
+      if (businessError) throw new Error(`Business creation failed: ${businessError.message}`);
+      addLog(`Organization ID: ${businessData.id} [OK]`);
 
-      setDeploymentStatus('Provisioning User Access...');
+      // 3. User Creation
+      addLog(`Creating Master Authority profile for ${adminName}...`);
       const { error: userError } = await supabase.from('users').insert([{ 
-          business_id: businessData.id, name: adminName, email: adminEmail, password: adminPassword, role: 'ADMIN_PRO', status: 'Active' 
+          id: `USR-${Date.now()}`, // Client-side ID generation for offline capability
+          business_id: businessData.id, 
+          name: adminName, 
+          email: adminEmail, 
+          password: adminPassword, // Note: In production, hash this!
+          role: 'ADMIN_PRO', 
+          status: 'Active' 
       }]);
-      if (userError) throw new Error(userError.message);
+      if (userError) throw new Error(`User provisioning failed: ${userError.message}`);
+      addLog("Master Authority profile created [OK]");
 
-      setDeploymentStatus('Migrating Inventory Assets...');
+      // 4. Inventory Migration
+      addLog(`Migrating ${generatedProducts.length} synthetic assets to ledger...`);
       if (generatedProducts.length > 0) {
         const { error: productsError } = await supabase.from('products').insert(generatedProducts.map(p => ({
-          business_id: businessData.id, name: p.name, sku: p.sku, category: p.category, price: p.price, 
-          stock: p.stock, image_url: p.imageUrl, description: p.description
+          id: p.id,
+          business_id: businessData.id, 
+          name: p.name, 
+          sku: p.sku, 
+          category: p.category, 
+          price: p.price, 
+          stock: p.stock, 
+          image_url: p.imageUrl, 
+          description: p.description
         })));
-        if (productsError) throw new Error(productsError.message);
+        if (productsError) throw new Error(`Inventory migration failed: ${productsError.message}`);
       }
-      setDeploymentStatus('Success');
-      onComplete(resultState);
+      addLog("Inventory ledger synchronized [OK]");
+
+      // 5. Finalize
+      addLog("System registry finalized.");
+      addLog("Redirecting to Command Center...");
+      
+      setTimeout(() => onComplete(resultState), 2000);
 
     } catch (error: any) {
-      console.warn("Cloud Deployment Warning:", error.message);
-      setDeploymentStatus('Switching to Local Neural Node...');
+      console.error("Deployment Error:", error);
+      addLog(`CRITICAL ERROR: ${error.message}`);
       
-      // FALLBACK: Save to Local IndexedDB immediately
-      await dbService.saveItems('products', generatedProducts);
-      // Wait a moment for UX
-      setTimeout(() => onComplete(resultState), 1500);
+      // FALLBACK MECHANISM
+      addLog("Initiating failover protocol to Local Neural Node...");
+      try {
+        await dbService.saveItems('products', generatedProducts);
+        addLog("Local ledger secured.");
+        addLog("Deployment completed in OFFLINE mode.");
+        setTimeout(() => onComplete(resultState), 2500);
+      } catch (localErr) {
+        setDeploymentError("Fatal: Both Cloud and Local storage failed.");
+      }
     }
   };
 
+  // --- Render Steps ---
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 font-sans selection:bg-indigo-100">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans selection:bg-indigo-100">
+      
+      {/* Step Indicator */}
       <div className="w-full max-w-4xl mb-12">
         <div className="flex justify-between items-center px-4 max-w-2xl mx-auto">
-          {[0, 1, 2, 3, 4].map(i => (
+          {['Identity', 'Assets', 'Scale', 'Authority', 'Deploy'].map((label, i) => (
             <div key={i} className={`flex items-center ${i < 4 ? 'flex-1' : ''}`}>
-               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all duration-500 ${step >= i ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white border border-slate-200 text-slate-300'}`}>
-                 {step > i ? <Check size={18} strokeWidth={3} /> : i + 1}
+               <div className="relative flex flex-col items-center">
+                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all duration-500 z-10 ${step >= i ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-110' : 'bg-white border border-slate-200 text-slate-300'}`}>
+                   {step > i ? <Check size={18} strokeWidth={3} /> : i + 1}
+                 </div>
+                 <span className={`absolute -bottom-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors duration-300 ${step >= i ? 'text-indigo-600' : 'text-slate-300'}`}>{label}</span>
                </div>
-               {i < 4 && <div className={`flex-1 h-1 mx-3 rounded-full ${step > i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>}
+               {i < 4 && <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-700 ${step > i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="w-full max-w-4xl bg-white border border-slate-200 p-12 md:p-16 rounded-[3rem] shadow-2xl relative overflow-hidden transition-all">
+      <div className="w-full max-w-4xl bg-white border border-slate-200 p-8 md:p-16 rounded-[3rem] shadow-2xl relative overflow-hidden transition-all min-h-[600px] flex flex-col">
+        
+        {/* STEP 0: Business Identity */}
         {step === 0 && (
-          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-500">
-            <div className="text-center space-y-4">
-              <Logo className="h-16 mb-6 mx-auto justify-center" />
-              <h2 className="text-4xl font-black text-slate-900 tracking-tight">AutoMate™ Setup</h2>
-              <p className="text-slate-500 max-w-md mx-auto">Initialize your AutoMate™ instance for intelligent market operations.</p>
+          <div className="flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-8 duration-500">
+            <div className="text-center space-y-6 mb-12">
+              <Logo className="h-20 mb-4 mx-auto justify-center" />
+              <div className="space-y-2">
+                <h2 className="text-4xl font-black text-slate-900 tracking-tight">AutoMate™ Setup</h2>
+                <p className="text-slate-500 font-medium max-w-md mx-auto">Initialize your intelligent commerce node. Define your market parameters to begin.</p>
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Store Designation</label><input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50" placeholder="e.g. Apex Retail" /></div>
-              <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Market Segment</label><input value={businessType} onChange={e => setBusinessType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50" placeholder="e.g. Fashion" /></div>
-            </div>
-            <div className="space-y-6">
-              <button onClick={handleStep0} disabled={isLoading || !businessName} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3">
+            
+            <div className="space-y-6 max-w-lg mx-auto w-full">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Organization Name</label>
+                <div className="relative group">
+                   <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
+                   <input 
+                     value={businessName} 
+                     onChange={e => { setBusinessName(e.target.value); setErrors({}); }}
+                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:font-medium placeholder:text-slate-300" 
+                     placeholder="e.g. Apex Retail Global" 
+                   />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Market Segment</label>
+                <div className="relative group">
+                   <Briefcase className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
+                   <input 
+                     value={businessType} 
+                     onChange={e => { setBusinessType(e.target.value); setErrors({}); }}
+                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:font-medium placeholder:text-slate-300" 
+                     placeholder="e.g. Fashion & Apparel" 
+                   />
+                </div>
+              </div>
+
+              {errors.business && (
+                <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2">
+                  <AlertCircle size={16} /> {errors.business}
+                </div>
+              )}
+
+              <button onClick={handleStep0} disabled={isLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 disabled:opacity-70 disabled:active:scale-100 mt-4">
                 {isLoading ? <><Loader2 className="animate-spin" size={20} /> <span className="text-xs uppercase tracking-widest">{loadingText}</span></> : <>Initialize Intelligence <ArrowRight size={20} /></>}
               </button>
-              <button onClick={onSwitchToLogin} className="w-full bg-white border-2 border-slate-100 hover:border-indigo-200 hover:text-indigo-600 text-slate-400 font-black py-4 rounded-3xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[10px] group">
-                <Lock size={14} className="group-hover:text-indigo-600 transition-colors" /> Access Existing Node
-              </button>
+
+              <div className="text-center pt-4">
+                 <button onClick={onSwitchToLogin} className="text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors flex items-center justify-center gap-2 mx-auto">
+                    <Lock size={12} /> Access Existing Node
+                 </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Steps 1, 2, 3 remain similar but omitted for brevity in XML diff if unchanged logic */}
+        {/* STEP 1: Assets Synthesized */}
         {step === 1 && (
-           <div className="space-y-10 animate-in fade-in text-center">
-             <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto text-indigo-600"><Sparkles size={32} /></div>
-             <h2 className="text-3xl font-black text-slate-900">Assets Synthesized</h2>
-             <div className="grid grid-cols-3 gap-4">
+           <div className="flex-1 flex flex-col justify-center items-center space-y-12 animate-in fade-in">
+             <div className="text-center space-y-4">
+               <div className="w-20 h-20 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto text-indigo-600 shadow-inner"><Sparkles size={40} /></div>
+               <h2 className="text-3xl font-black text-slate-900">Assets Synthesized</h2>
+               <p className="text-slate-500 max-w-md mx-auto">AI has generated preliminary inventory based on your market segment.</p>
+             </div>
+             
+             <div className="grid grid-cols-3 gap-6 w-full max-w-2xl">
                 {generatedProducts.slice(0, 3).map((p, i) => (
-                  <div key={i} className="aspect-square bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden"><SafeImage src={p.imageUrl} alt={p.name} /></div>
+                  <div key={i} className="group relative">
+                    <div className="aspect-square bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden shadow-sm group-hover:shadow-md transition-all">
+                      <SafeImage src={p.imageUrl} alt={p.name} />
+                    </div>
+                    <p className="text-center mt-3 text-xs font-black uppercase text-slate-700 tracking-wider truncate px-2">{p.category}</p>
+                  </div>
                 ))}
              </div>
-             <button onClick={nextStep} className="w-full bg-indigo-600 text-white font-black py-6 rounded-3xl shadow-xl flex items-center justify-center gap-2">Confirm <Check size={18} /></button>
+
+             <button onClick={nextStep} className="w-full max-w-md bg-indigo-600 text-white font-black py-6 rounded-3xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95">
+               Confirm & Continue <Check size={20} />
+             </button>
            </div>
         )}
 
+        {/* STEP 2: Subscription Plan */}
         {step === 2 && (
-           <div className="space-y-10 animate-in fade-in">
-             <h2 className="text-3xl font-black text-center text-slate-900">Scalability</h2>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{PLANS.map(p => <div key={p.id} onClick={() => setSelectedPlan(p.id)} className={`p-6 border-2 rounded-[2rem] cursor-pointer ${selectedPlan === p.id ? p.color : 'border-slate-100 opacity-60'}`}><h4 className="font-black text-sm">{p.name}</h4><p className="text-xl font-black mt-2">₱{p.price}</p></div>)}</div>
-             <button onClick={nextStep} className="w-full bg-indigo-600 text-white font-black py-6 rounded-3xl">Next Step</button>
+           <div className="flex-1 flex flex-col animate-in fade-in">
+             <div className="text-center space-y-2 mb-10">
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight">Subscription Plan</h2>
+                <p className="text-slate-500 text-sm font-medium">Choose the architecture that fits your business scale.</p>
+             </div>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                {PLANS.map(p => (
+                  <div 
+                    key={p.id} 
+                    onClick={() => setSelectedPlan(p.id)} 
+                    className={`relative p-6 border-2 rounded-[2.5rem] cursor-pointer transition-all duration-300 flex flex-col gap-4 group ${selectedPlan === p.id ? p.color + ' scale-105 z-10 bg-white ring-4 ring-indigo-50' : 'border-slate-100 hover:border-slate-200 bg-white hover:shadow-lg opacity-80 hover:opacity-100 scale-95'}`}
+                  >
+                    {p.recommended && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">
+                        Recommended
+                      </div>
+                    )}
+                    <div className="text-center pb-4 border-b border-slate-100">
+                      <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs mb-2">{p.name}</h4>
+                      <p className="text-3xl font-black text-slate-900 tracking-tighter">₱{p.price.toLocaleString()}<span className="text-sm text-slate-400 font-bold ml-1">/mo</span></p>
+                    </div>
+                    <ul className="space-y-3 flex-1">
+                      {p.features.map((feat, i) => (
+                        <li key={i} className="flex items-start gap-3 text-[10px] font-bold text-slate-600">
+                          <Check size={14} className={`shrink-0 mt-0.5 ${selectedPlan === p.id ? 'text-indigo-600' : 'text-slate-300'}`} />
+                          <span className="leading-snug">{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className={`mt-auto pt-4 text-center text-[10px] font-black uppercase tracking-widest ${selectedPlan === p.id ? 'text-indigo-600' : 'text-slate-300'}`}>
+                      {selectedPlan === p.id ? 'Selected' : 'Select Plan'}
+                    </div>
+                  </div>
+                ))}
+             </div>
+             <button onClick={nextStep} className="w-full max-w-md mx-auto bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 active:scale-95 flex items-center justify-center gap-2">
+               Continue <ArrowRight size={20} />
+             </button>
            </div>
         )}
 
+        {/* STEP 3: Admin Setup */}
         {step === 3 && (
-            <div className="space-y-10 animate-in fade-in max-w-lg mx-auto">
-               {isCreatingProfile ? (
-                 <div className="flex flex-col items-center justify-center py-12"><Loader2 className="animate-spin text-indigo-600 mb-4" size={48} /><p className="font-black text-xs uppercase text-slate-400">Encrypting...</p></div>
-               ) : (
-                 <>
-                   <h2 className="text-3xl font-black text-center">Master Authority</h2>
-                   <div className="space-y-4">
-                      <input value={adminName} onChange={e => setAdminName(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-2xl p-5 outline-none font-bold" placeholder="Name" />
-                      <input value={adminEmail} onChange={e => setAdminEmail(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-2xl p-5 outline-none font-bold" placeholder="Email" />
-                      <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-2xl p-5 outline-none font-bold" placeholder="Key (5-8 digits)" maxLength={8} />
-                      {errors.password && <p className="text-rose-500 text-xs font-bold">{errors.password}</p>}
-                   </div>
-                   <button onClick={handleVerifyDeployment} className="w-full bg-indigo-600 text-white font-black py-6 rounded-3xl">Verify</button>
-                 </>
-               )}
+            <div className="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full animate-in fade-in space-y-8">
+               <div className="text-center space-y-2">
+                 <div className="w-16 h-16 bg-slate-900 rounded-[2rem] flex items-center justify-center mx-auto text-white shadow-xl mb-4"><ShieldCheck size={32} /></div>
+                 <h2 className="text-3xl font-black text-slate-900">Master Authority</h2>
+                 <p className="text-slate-500 text-sm">Create the root administrator credentials for your organization.</p>
+               </div>
+
+               <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Administrator Name</label>
+                    <div className="relative">
+                      <User size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
+                      <input 
+                        value={adminName} 
+                        onChange={e => { setAdminName(e.target.value); setErrors({...errors, name: undefined}); }} 
+                        className={`w-full bg-slate-50 border ${errors.name ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
+                        placeholder="John Doe" 
+                      />
+                    </div>
+                    {errors.name && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.name}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Secure Email</label>
+                    <div className="relative">
+                      <Briefcase size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
+                      <input 
+                        value={adminEmail} 
+                        onChange={e => { setAdminEmail(e.target.value); setErrors({...errors, email: undefined}); }} 
+                        className={`w-full bg-slate-50 border ${errors.email ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
+                        placeholder="admin@company.com" 
+                      />
+                    </div>
+                    {errors.email && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.email}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Access Key</label>
+                    <div className="relative">
+                      <Lock size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        value={adminPassword} 
+                        onChange={e => { setAdminPassword(e.target.value); setErrors({...errors, password: undefined}); }} 
+                        className={`w-full bg-slate-50 border ${errors.password ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-12 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
+                        placeholder="5-8 Digits" 
+                        maxLength={8} 
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    {errors.password && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.password}</p>}
+                  </div>
+               </div>
+               
+               <button onClick={handleVerifyDeployment} className="w-full bg-indigo-600 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Verify & Deploy</button>
             </div>
         )}
 
+        {/* STEP 4: System Provisioning (Terminal) */}
         {step === 4 && (
-          <div className="text-center space-y-10 py-8 animate-in zoom-in-95">
-            {isDeploying ? (
-               <div className="flex flex-col items-center gap-6"><Loader2 size={64} className="text-indigo-600 animate-spin" /><p className="font-bold uppercase text-xs text-slate-500 animate-pulse">{deploymentStatus}</p></div>
+          <div className="flex-1 flex flex-col justify-center animate-in zoom-in-95 duration-500 w-full max-w-2xl mx-auto">
+            {!deploymentError && deploymentLogs.length > 0 && deploymentLogs[deploymentLogs.length - 1].includes("Redirecting") ? (
+              <div className="text-center space-y-8">
+                <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 border-4 border-emerald-100 animate-bounce"><Check size={56} strokeWidth={4} /></div>
+                <div>
+                   <h2 className="text-4xl font-black text-slate-900 mb-2">Systems Ready</h2>
+                   <p className="text-slate-500 font-medium">Redirecting you to the command center...</p>
+                </div>
+              </div>
             ) : (
-              <>
-                <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500"><Check size={56} /></div>
-                <h2 className="text-4xl font-black text-slate-900">Systems Ready</h2>
-                <button onClick={handleFinalize} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] flex items-center justify-center gap-3 uppercase text-sm">Deploy <Rocket size={20} /></button>
-              </>
+              <div className="bg-slate-900 rounded-[2rem] p-6 shadow-2xl border border-slate-800 font-mono text-sm relative overflow-hidden h-[400px] flex flex-col">
+                <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-4">
+                   <div className="flex gap-2">
+                     <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+                     <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                     <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                   </div>
+                   <div className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2"><Terminal size={14}/> AutoMate System CL</div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-2 text-xs custom-scrollbar pr-2">
+                   {deploymentLogs.map((log, i) => (
+                     <div key={i} className={`font-mono ${log.includes("ERROR") ? "text-rose-400" : log.includes("WARNING") ? "text-amber-400" : log.includes("[OK]") ? "text-emerald-400" : "text-slate-300"}`}>
+                       <span className="opacity-50 mr-2">{'>'}</span>{log}
+                     </div>
+                   ))}
+                   <div ref={logsEndRef} />
+                </div>
+
+                {deploymentError && (
+                  <div className="mt-4 p-4 bg-rose-900/30 border border-rose-800 rounded-xl text-rose-300 flex items-start gap-3">
+                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Deployment Halted</p>
+                      <p className="opacity-80">{deploymentError}</p>
+                      <button onClick={handleFinalize} className="mt-2 text-xs bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider transition-colors">Retry Protocol</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {!deploymentError && !deploymentLogs[deploymentLogs.length - 1]?.includes("Redirecting") && (
+               <p className="text-center mt-6 text-[10px] font-black uppercase tracking-widest text-slate-400 animate-pulse">
+                 Provisioning Cloud Infrastructure...
+               </p>
             )}
           </div>
         )}

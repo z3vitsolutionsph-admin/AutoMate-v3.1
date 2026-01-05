@@ -1,7 +1,7 @@
 
 // IndexedDB Wrapper for handling large datasets (Images, Products) that exceed LocalStorage quotas.
 const DB_NAME = 'AutoMate_v3_DB';
-const DB_VERSION = 2; // Incremented version for schema update
+const DB_VERSION = 3; // Version 3 adds indices
 const STORES = ['products', 'transactions', 'users', 'suppliers', 'offline_queue'];
 
 export const dbService = {
@@ -10,23 +10,39 @@ export const dbService = {
     return new Promise((resolve, reject) => {
       // Check if IndexedDB is supported
       if (!window.indexedDB) {
-        reject(new Error("IndexedDB not supported"));
+        reject(new Error("IndexedDB not supported in this environment"));
         return;
       }
 
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = () => reject(request.error);
+      request.onerror = (event) => {
+        console.error("IndexedDB error:", (event.target as any).error);
+        reject((event.target as any).error);
+      };
+
       request.onsuccess = () => resolve(request.result);
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        
         STORES.forEach(storeName => {
           if (!db.objectStoreNames.contains(storeName)) {
-            // Create stores with 'id' as the keyPath
-            // For offline_queue, we might want autoIncrement if we don't have IDs, 
-            // but we'll use a generated UUID for queue items.
-            db.createObjectStore(storeName, { keyPath: 'id' });
+            const store = db.createObjectStore(storeName, { keyPath: 'id' });
+            
+            // Create Indices for faster local querying
+            if (storeName !== 'offline_queue') {
+              store.createIndex('business_id', 'businessId', { unique: false });
+            }
+            if (storeName === 'transactions') {
+              store.createIndex('date', 'date', { unique: false });
+            }
+          } else {
+             // Upgrade existing stores if needed
+             const store = (event.target as IDBOpenDBRequest).transaction?.objectStore(storeName);
+             if (store && storeName !== 'offline_queue' && !store.indexNames.contains('business_id')) {
+                store.createIndex('business_id', 'businessId', { unique: false });
+             }
           }
         });
       };
@@ -51,8 +67,26 @@ export const dbService = {
     }
   },
 
+  // Get by ID
+  getById: async <T>(storeName: string, id: string): Promise<T | undefined> => {
+    try {
+      const db = await dbService.open();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.get(id);
+        
+        request.onsuccess = () => resolve(request.result as T);
+        request.onerror = () => reject(request.error);
+      });
+    } catch (e) {
+      return undefined;
+    }
+  },
+
   // Generic Save (Bulk)
   saveItems: async (storeName: string, items: any[]) => {
+    if (!items.length) return;
     try {
       const db = await dbService.open();
       return new Promise<void>((resolve, reject) => {
@@ -66,6 +100,7 @@ export const dbService = {
       });
     } catch (e) {
       console.error(`[LocalDB] Failed to save ${storeName}`, e);
+      throw e;
     }
   },
 
@@ -83,6 +118,7 @@ export const dbService = {
       });
     } catch (e) {
       console.error(`[LocalDB] Failed to delete from ${storeName}`, e);
+      throw e;
     }
   },
 
