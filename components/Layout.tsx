@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sidebar } from './Sidebar';
-import { ViewState, UserRole, Product, Transaction, SystemUser } from '../types';
-import { Menu, Bell, UserCircle, Search, Command, LogOut, Settings, User, CreditCard, ChevronDown, AlertTriangle, CheckCircle2, Info, ShoppingBag, X, Zap, Sparkles, BellRing, BarChart, UserPlus } from 'lucide-react';
+import { ViewState, UserRole, Product, Transaction, SystemUser, PlanType } from '../types';
+import { Menu, Bell, UserCircle, Search, Command, LogOut, Settings, User, CreditCard, ChevronDown, AlertTriangle, CheckCircle2, Info, ShoppingBag, X, Zap, Sparkles, BellRing, BarChart, UserPlus, ArrowRight } from 'lucide-react';
 import { formatCurrency } from '../constants';
 
 interface LayoutProps {
@@ -15,6 +16,7 @@ interface LayoutProps {
   transactions: Transaction[];
   currentUser: SystemUser;
   users?: SystemUser[];
+  subscriptionPlan: PlanType;
 }
 
 interface AppNotification {
@@ -27,7 +29,7 @@ interface AppNotification {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
-  currentView, setView, children, role, businessName, onLogout, products, transactions, currentUser, users = [] 
+  currentView, setView, children, role, businessName, onLogout, products, transactions, currentUser, users = [], subscriptionPlan
 }) => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -162,6 +164,7 @@ export const Layout: React.FC<LayoutProps> = ({
         setIsMobileOpen={setIsMobileOpen}
         onLogout={onLogout}
         role={role}
+        subscriptionPlan={subscriptionPlan}
       />
 
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 relative">
@@ -212,81 +215,87 @@ export const Layout: React.FC<LayoutProps> = ({
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 top-full mt-4 w-[min(92vw,24rem)] bg-white/70 backdrop-blur-2xl border border-white/50 rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.12)] z-[60] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300 ring-1 ring-black/5">
-                    <div className="p-7 border-b border-black/5 flex justify-between items-center bg-white/40">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-200">
-                            <Zap size={18} fill="currentColor" />
+                <div className="fixed inset-x-4 top-24 md:absolute md:inset-x-auto md:right-0 md:top-full md:mt-4 w-auto md:w-[400px] bg-white/95 backdrop-blur-3xl border border-white/60 rounded-[2rem] shadow-2xl z-[60] overflow-hidden animate-in fade-in slide-in-from-top-3 duration-300 ring-1 ring-black/5 flex flex-col origin-top-right">
+                    
+                    {/* Header */}
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-10">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-200 flex items-center justify-center">
+                            <Zap size={20} fill="currentColor" />
                           </div>
                           <div>
-                            <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-widest leading-none">Activity Feed</h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-none">{unreadCount} Pending Tasks</p>
+                            <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-[0.15em] leading-none">Activity Feed</h3>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-none">{unreadCount} Pending Tasks</p>
                           </div>
                         </div>
                         {unreadCount > 0 && (
                           <button 
                             onClick={markAllAsRead}
-                            className="px-4 py-2 bg-slate-900 text-[9px] font-black text-white uppercase tracking-widest hover:bg-slate-800 transition-all rounded-full shadow-lg shadow-slate-100 active:scale-95"
+                            className="px-4 py-2 bg-gradient-to-r from-slate-800 to-slate-900 text-[9px] font-black text-white uppercase tracking-widest hover:shadow-lg transition-all rounded-full active:scale-95 border border-slate-700 shadow-md"
                           >
                             Flush All
                           </button>
                         )}
                     </div>
-                    <div className="max-h-[460px] overflow-y-auto custom-scrollbar">
+
+                    {/* List */}
+                    <div className="max-h-[60vh] sm:max-h-[480px] overflow-y-auto custom-scrollbar bg-white/40">
                         {notifications.length > 0 ? notifications.map(n => {
                             const isRead = readNotifIds.includes(n.id);
                             return (
                               <div 
                                 key={n.id} 
                                 onClick={() => markAsRead(n.id)}
-                                className={`p-6 border-b border-black/5 hover:bg-white/60 transition-all cursor-pointer relative group ${!isRead ? 'bg-indigo-50/30' : ''}`}
+                                className={`p-5 border-b border-slate-100/50 hover:bg-white/80 transition-all cursor-pointer relative group ${!isRead ? 'bg-indigo-50/30' : ''}`}
                               >
                                   <div className="flex gap-4">
-                                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-110 ${
+                                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105 shadow-sm ${
                                         n.type === 'alert' ? 'bg-rose-50 border-rose-100 text-rose-500' : 
                                         n.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-500' : 
                                         'bg-indigo-50 border-indigo-100 text-indigo-500'
                                       }`}>
-                                          {n.title === 'New Personnel Onboarded' && <UserPlus size={20} />}
-                                          {n.type === 'alert' && <AlertTriangle size={20} />}
-                                          {n.type === 'success' && <ShoppingBag size={20} />}
-                                          {n.type === 'info' && n.title !== 'New Personnel Onboarded' && <Sparkles size={20} />}
+                                          {n.title === 'New Personnel Onboarded' && <UserPlus size={18} />}
+                                          {n.type === 'alert' && <AlertTriangle size={18} />}
+                                          {n.type === 'success' && <ShoppingBag size={18} />}
+                                          {n.type === 'info' && n.title !== 'New Personnel Onboarded' && <Sparkles size={18} />}
                                       </div>
-                                      <div className="flex-1 min-w-0">
+                                      <div className="flex-1 min-w-0 pt-0.5">
                                           <div className="flex justify-between items-start mb-1.5">
-                                              <span className={`text-[12px] font-black uppercase tracking-tight truncate pr-4 ${!isRead ? 'text-slate-900' : 'text-slate-500'}`}>
+                                              <span className={`text-[11px] font-black uppercase tracking-tight truncate pr-2 ${!isRead ? 'text-slate-900' : 'text-slate-600'}`}>
                                                 {n.title}
                                               </span>
-                                              <span className="text-[9px] text-slate-400 font-bold whitespace-nowrap bg-slate-100 px-2 py-0.5 rounded-md">
+                                              <span className="text-[9px] text-slate-400 font-bold whitespace-nowrap bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
                                                 {getRelativeTime(n.time)}
                                               </span>
                                           </div>
-                                          <p className={`text-[11px] leading-relaxed line-clamp-2 ${!isRead ? 'text-slate-700 font-semibold' : 'text-slate-400 font-medium'}`}>
+                                          <p className={`text-[10px] leading-relaxed line-clamp-2 ${!isRead ? 'text-slate-800 font-bold' : 'text-slate-400 font-medium'}`}>
                                             {n.message}
                                           </p>
                                       </div>
                                   </div>
                                   {!isRead && (
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-indigo-600 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.5)]" />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 w-2 h-2 bg-indigo-600 rounded-full shadow-[0_0_8px_rgba(79,70,229,0.6)] animate-pulse" />
                                   )}
                               </div>
                             );
                         }) : (
-                          <div className="py-24 text-center flex flex-col items-center gap-5">
-                              <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-200">
-                                <Bell size={32} />
+                          <div className="py-20 text-center flex flex-col items-center gap-4 opacity-60">
+                              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300">
+                                <Bell size={24} />
                               </div>
-                              <div className="space-y-1">
-                                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-300">All Nodes Silent</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">No recent system anomalies</p>
+                              <div className="space-y-0.5">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">All Nodes Silent</p>
+                                <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">No recent alerts</p>
                               </div>
                           </div>
                         )}
                     </div>
+                    
+                    {/* Footer */}
                     {notifications.length > 0 && (
-                      <div className="p-5 bg-white/40 border-t border-black/5 text-center">
-                         <button className="text-[9px] font-black text-slate-400 uppercase tracking-[0.25em] hover:text-indigo-600 transition-colors flex items-center justify-center gap-2 mx-auto">
-                           <BarChart size={12}/> View Operational History
+                      <div className="p-4 bg-slate-50/80 border-t border-slate-100 text-center backdrop-blur-sm sticky bottom-0">
+                         <button className="text-[9px] font-black text-indigo-600 uppercase tracking-[0.25em] hover:text-indigo-800 transition-colors flex items-center justify-center gap-2 mx-auto py-1 group">
+                           View Journal <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform"/>
                          </button>
                       </div>
                     )}

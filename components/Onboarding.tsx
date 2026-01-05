@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Store, Wand2, Check, ArrowRight, User, Briefcase, Loader2, Sparkles, CreditCard, ShieldCheck, Smartphone, Landmark, Zap, Gift, Building2, ChevronRight, ChevronLeft, ShieldAlert, Users, Rocket, Mail, Lock, Eye, EyeOff, Shield, Verified, Globe, Info, Landmark as Bank, AlertCircle, Package, Image as ImageIcon } from 'lucide-react';
-import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
+import { OnboardingState, PlanType, SubscriptionPlan, Product, UserRole } from '../types';
 import { generateBusinessCategories, generateProductImage } from '../services/geminiService';
+import { supabase } from '../services/supabaseClient';
 import { Logo } from './Logo';
 
 const PLANS: SubscriptionPlan[] = [
@@ -53,11 +54,14 @@ const SafeImage: React.FC<{ src?: string, alt: string }> = ({ src, alt }) => {
   );
 };
 
-export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void }> = ({ onComplete }) => {
+export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void; onSwitchToLogin: () => void }> = ({ onComplete, onSwitchToLogin }) => {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Initializing Intelligence...');
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState('');
+  
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
@@ -172,19 +176,102 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
     }
   };
 
-  const handleFinalize = () => {
-    onComplete({ 
-      businessName, 
-      businessType, 
-      generatedCategories: categories, 
-      generatedProducts: generatedProducts,
-      selectedPlan, 
-      paymentMethod: 'GCASH', 
-      adminName, 
-      adminEmail, 
-      adminPassword, 
-      isComplete: true 
-    });
+  const handleFinalize = async () => {
+    setIsDeploying(true);
+    setDeploymentStatus('Connecting to Cloud Database...');
+
+    try {
+      // 1. Create Business
+      const { data: businessData, error: businessError } = await supabase
+        .from('businesses')
+        .insert([
+          { 
+            name: businessName, 
+            type: businessType, 
+            subscription_plan: selectedPlan 
+          }
+        ])
+        .select()
+        .single();
+
+      if (businessError) throw new Error(`Business creation failed: ${businessError.message}`);
+
+      const businessId = businessData.id;
+
+      // 2. Create User (Admin)
+      setDeploymentStatus('Provisioning User Access...');
+      const { error: userError } = await supabase
+        .from('users')
+        .insert([
+          { 
+            business_id: businessId,
+            name: adminName, 
+            email: adminEmail, 
+            password: adminPassword, // Note: In production, hash this!
+            role: 'ADMIN_PRO',
+            status: 'Active'
+          }
+        ]);
+
+      if (userError) throw new Error(`User provisioning failed: ${userError.message}`);
+
+      // 3. Create Products
+      setDeploymentStatus('Migrating Inventory Assets...');
+      if (generatedProducts.length > 0) {
+        const productsToInsert = generatedProducts.map(p => ({
+          business_id: businessId,
+          name: p.name,
+          sku: p.sku,
+          category: p.category,
+          price: p.price,
+          stock: p.stock,
+          image_url: p.imageUrl,
+          description: p.description
+        }));
+
+        const { error: productsError } = await supabase
+          .from('products')
+          .insert(productsToInsert);
+
+        if (productsError) throw new Error(`Inventory migration failed: ${productsError.message}`);
+      }
+      
+      setDeploymentStatus('Success');
+      
+      // Pass data to App.tsx for immediate local state update (Hybrid approach for smooth UX)
+      onComplete({ 
+        businessName, 
+        businessType, 
+        generatedCategories: categories, 
+        generatedProducts: generatedProducts,
+        selectedPlan, 
+        paymentMethod: 'GCASH', 
+        adminName, 
+        adminEmail, 
+        adminPassword, 
+        isComplete: true 
+      });
+
+    } catch (error: any) {
+      console.error("Deployment Error:", error);
+      setDeploymentStatus(`Deployment Failed: ${error.message}`);
+      setIsDeploying(false);
+      
+      // Fallback: Continue locally if Supabase connection/config fails
+      alert("Cloud connection unavailable. Proceeding in Local Mode.");
+       onComplete({ 
+        businessName, 
+        businessType, 
+        generatedCategories: categories, 
+        generatedProducts: generatedProducts,
+        selectedPlan, 
+        paymentMethod: 'GCASH', 
+        adminName, 
+        adminEmail, 
+        adminPassword, 
+        isComplete: true 
+      });
+    }
   };
 
   return (
@@ -218,6 +305,14 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
               <button onClick={handleStep0} disabled={isLoading || !businessName} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3">
                 {isLoading ? <><Loader2 className="animate-spin" size={20} /> <span className="text-xs uppercase tracking-widest">{loadingText}</span></> : <>Initialize Intelligence <ArrowRight size={20} /></>}
               </button>
+              
+              <button 
+                onClick={onSwitchToLogin}
+                className="w-full bg-white border-2 border-slate-100 hover:border-indigo-200 hover:text-indigo-600 text-slate-400 font-black py-4 rounded-3xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[10px] group"
+              >
+                <Lock size={14} className="group-hover:text-indigo-600 transition-colors" /> Access Existing Node
+              </button>
+
               <p className="text-center text-[8px] font-bold text-slate-400 uppercase tracking-widest">
                 © 2024 AutoMate Systems Global. Neural Ledger Technology™
               </p>
@@ -347,12 +442,24 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void 
 
         {step === 4 && (
           <div className="text-center space-y-10 py-8 animate-in zoom-in-95 duration-700">
-            <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 shadow-xl border border-emerald-100"><Check size={56} strokeWidth={4} /></div>
-            <div>
-              <h2 className="text-4xl font-black text-slate-900 mb-4">Core Systems Ready</h2>
-              <p className="text-slate-500 max-w-sm mx-auto">AutoMate™ has provisioned your instance at <span className="text-indigo-600 font-black">{businessName}</span>.</p>
-            </div>
-            <button onClick={handleFinalize} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-6 rounded-[2.5rem] shadow-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-sm">Deploy AutoMate™ <Rocket size={20} /></button>
+            {isDeploying ? (
+               <div className="flex flex-col items-center gap-6">
+                 <Loader2 size={64} className="text-indigo-600 animate-spin" />
+                 <div className="space-y-2">
+                    <h2 className="text-2xl font-black text-slate-900">Provisioning Cloud Node</h2>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">{deploymentStatus}</p>
+                 </div>
+               </div>
+            ) : (
+              <>
+                <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 shadow-xl border border-emerald-100"><Check size={56} strokeWidth={4} /></div>
+                <div>
+                  <h2 className="text-4xl font-black text-slate-900 mb-4">Core Systems Ready</h2>
+                  <p className="text-slate-500 max-w-sm mx-auto">AutoMate™ has provisioned your instance at <span className="text-indigo-600 font-black">{businessName}</span>.</p>
+                </div>
+                <button onClick={handleFinalize} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-6 rounded-[2.5rem] shadow-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-sm">Deploy AutoMate™ <Rocket size={20} /></button>
+              </>
+            )}
           </div>
         )}
       </div>

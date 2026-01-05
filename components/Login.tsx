@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, Loader2, KeyRound, Box, Store, Bot, BarChart3 } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, Loader2, KeyRound, Box, Store, Bot, BarChart3, ArrowLeft } from 'lucide-react';
 import { Logo } from './Logo';
 
 interface LoginProps {
   onLoginSuccess: (email: string, pass: string) => boolean;
+  onBack: () => void;
   businessName?: string;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, businessName }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBack, businessName }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -62,6 +63,14 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, businessName }) =>
        <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative bg-slate-50">
           <div className="w-full max-w-md relative z-10">
             <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+              <button 
+                onClick={onBack}
+                className="absolute top-8 left-8 p-2 text-slate-300 hover:text-indigo-600 hover:bg-slate-50 rounded-full transition-all"
+                title="Back to Setup"
+              >
+                <ArrowLeft size={24} />
+              </button>
+
               <div className="text-center mb-12 flex flex-col items-center">
                 <Logo className="h-16 mb-4" />
                 <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center">

@@ -19,6 +19,7 @@ export enum UserRole {
 
 export interface SystemUser {
   id: string;
+  businessId?: string; // Linked to Supabase business table
   name: string;
   email: string;
   password?: string; // Stored for session validation
@@ -31,6 +32,7 @@ export interface SystemUser {
 
 export interface Product {
   id: string;
+  businessId?: string; // Linked to Supabase business table
   name: string;
   sku: string;
   category: string;
@@ -56,6 +58,7 @@ export interface CartItem extends Product {
 
 export interface Transaction {
   id: string;
+  businessId?: string; // Linked to Supabase business table
   date: string; // Format: YYYY-MM-DD
   productId?: string;
   product: string; // Name
@@ -104,6 +107,15 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: Date;
+}
+
+export interface Referral {
+  id: string;
+  businessId?: string;
+  clientName: string;
+  dateJoined: string;
+  status: 'Active' | 'Pending' | 'Cancelled';
+  commission: number;
 }
 
 // Onboarding Types

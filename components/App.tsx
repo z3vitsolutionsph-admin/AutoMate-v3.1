@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, ReactNode, ErrorInfo } from 'react';
 import { Layout } from './Layout';
 import { Onboarding } from './Onboarding';
 import { Login } from './Login';
@@ -11,7 +11,66 @@ import { Promoter } from './Promoter';
 import { Support } from './Support';
 import { Settings } from './Settings';
 import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType } from '../types';
-import { Crown, ArrowRight, Lock } from 'lucide-react';
+import { Lock, Crown, ArrowRight, AlertTriangle } from 'lucide-react';
+
+// --- Error Boundary Component ---
+// Explicitly define State and Props interfaces to resolve TS property access errors
+interface ErrorBoundaryProps {
+  children?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Fix: Use React.Component to ensure this.props and this.state are correctly typed in all TS environments.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render(): ReactNode {
+    // Access state directly from this.state
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
+          <div className="max-w-md w-full bg-white p-10 rounded-[2.5rem] shadow-2xl border border-rose-100 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
+            <div className="w-20 h-20 bg-rose-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-rose-500 shadow-xl shadow-rose-100">
+              <AlertTriangle size={36} strokeWidth={2.5} />
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">System Anomaly</h2>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">
+              The application encountered a critical runtime error. Diagnostics have been logged to the neural console.
+            </p>
+            <div className="bg-slate-50 p-5 rounded-2xl text-left mb-8 overflow-auto max-h-32 border border-slate-200 shadow-inner">
+               <code className="text-[10px] text-slate-600 font-mono break-all block">{this.state.error?.message}</code>
+            </div>
+            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl transition-all shadow-lg shadow-indigo-200 active:scale-95 uppercase tracking-widest text-xs">
+              Reboot System
+            </button>
+          </div>
+        </div>
+      );
+    }
+    // Access props directly from this.props - using a type assertion to resolve compiler discrepancy where 'props' is not found on type 'ErrorBoundary'
+    return (this as any).props.children;
+  }
+}
 
 const App: React.FC = () => {
   // --- Constants & Storage ---
@@ -219,11 +278,11 @@ const App: React.FC = () => {
 
   // --- Render Logic ---
   if (!isSetupComplete) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
+    return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;
   }
 
   if (!currentUser) {
-    return <Login onLoginSuccess={handleLogin} businessName={businessName} />;
+    return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={businessName} />;
   }
 
   // Blocking Modal for Expired Trial
@@ -293,6 +352,7 @@ const App: React.FC = () => {
         transactions={transactions}
         currentUser={currentUser}
         users={users}
+        subscriptionPlan={subscriptionPlan}
       >
         {renderContent()}
       </Layout>

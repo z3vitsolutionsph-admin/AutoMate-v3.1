@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Package, ShoppingCart, Users, LifeBuoy, LogOut, Settings, BarChart3, ArrowRightLeft, ShieldCheck, Clock } from 'lucide-react';
-import { ViewState, UserRole } from '../types';
+import { ViewState, UserRole, PlanType } from '../types';
 import { Logo } from './Logo';
 
 interface SidebarProps {
@@ -10,6 +11,7 @@ interface SidebarProps {
   setIsMobileOpen: (open: boolean) => void;
   onLogout: () => void;
   role: UserRole;
+  subscriptionPlan: PlanType;
 }
 
 const ROLE_PERMISSIONS: Record<UserRole, ViewState[]> = {
@@ -20,7 +22,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ViewState[]> = {
   [UserRole.EMPLOYEE]: [ViewState.POS, ViewState.INVENTORY]
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobileOpen, setIsMobileOpen, onLogout, role }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobileOpen, setIsMobileOpen, onLogout, role, subscriptionPlan }) => {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -38,7 +40,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
     { id: ViewState.SETTINGS, label: 'Configuration', icon: Settings },
   ];
 
-  const navItems = allNavItems.filter(item => (ROLE_PERMISSIONS[role] || []).includes(item.id));
+  const navItems = allNavItems.filter(item => {
+    // Feature Gating: Remove Promoter/Affiliates for Starter Plan
+    if (item.id === ViewState.PROMOTER && subscriptionPlan === 'STARTER') {
+      return false;
+    }
+    
+    // Role Permission Check
+    return (ROLE_PERMISSIONS[role] || []).includes(item.id);
+  });
 
   return (
     <>

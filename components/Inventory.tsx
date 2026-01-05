@@ -4,12 +4,13 @@ import {
   Check, Edit3, Trash2, Filter, ChevronDown, CheckSquare, Square, 
   Layers, Save, Wand2, Info, ArrowUpRight, ShieldAlert, MoreHorizontal,
   Building2, Tag, Box, Upload, Link, Image as ImageIcon, Trash, Zap,
-  Type as FontType, ArrowRight, Globe, FilterX, RefreshCw, Phone, MapPin, Mail, User, Printer
+  Type as FontType, ArrowRight, Globe, FilterX, RefreshCw, Phone, MapPin, Mail, User, Printer, Download
 } from 'lucide-react';
 import { Product, Supplier, Transaction, UserRole } from '../types';
 import { formatCurrency } from '../constants';
 import { enhanceProductDetails, generateProductImage, searchProductImage } from '../services/geminiService';
 import JsBarcode from 'jsbarcode';
+import { jsPDF } from 'jspdf';
 
 // Safely access window for AI Studio helpers
 const aistudio = (window as any).aistudio;
@@ -561,7 +562,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   // Label Print State
   const [labelProduct, setLabelProduct] = useState<Product | null>(null);
   const barcodeRef = useRef<SVGSVGElement>(null);
-  const printBarcodeRef = useRef<SVGSVGElement>(null);
 
   // Neural Auto-Sync State
   const [isSyncing, setIsSyncing] = useState(false);
@@ -600,23 +600,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
           console.error("Preview barcode generation failed", e);
         }
       }
-
-      // Print Barcode (Simpler, higher contrast for label printers)
-      if (printBarcodeRef.current) {
-        try {
-          JsBarcode(printBarcodeRef.current, labelProduct.sku, {
-            format: "CODE128",
-            width: 2,
-            height: 40,
-            displayValue: false,
-            lineColor: "#000000",
-            margin: 0,
-            background: "#ffffff"
-          });
-        } catch (e) {
-          console.error("Print barcode generation failed", e);
-        }
-      }
     }
   }, [labelProduct]);
 
@@ -652,8 +635,45 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
     }, 1200);
   };
 
-  const handlePrintLabel = () => {
-    window.print();
+  const handleDownloadBarcode = () => {
+    if (!labelProduct) return;
+
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: [50, 30] // 50mm x 30mm sticker size
+    });
+
+    // Add Product Name (Top)
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text(labelProduct.name.substring(0, 20).toUpperCase(), 25, 5, { align: 'center' });
+
+    // Generate Barcode Image using Canvas
+    const canvas = document.createElement('canvas');
+    JsBarcode(canvas, labelProduct.sku, {
+      format: "CODE128",
+      displayValue: false,
+      width: 2,
+      height: 40,
+      margin: 0
+    });
+    const imgData = canvas.toDataURL("image/png");
+
+    // Add Barcode Image to PDF
+    doc.addImage(imgData, 'PNG', 5, 7, 40, 15);
+
+    // Add SKU Text
+    doc.setFontSize(7);
+    doc.setFont("courier", "bold");
+    doc.text(labelProduct.sku, 25, 24, { align: 'center' });
+
+    // Add Price
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text(formatCurrency(labelProduct.price), 25, 28, { align: 'center' });
+
+    doc.save(`${labelProduct.sku}-barcode.pdf`);
   };
 
   const handleDeleteProduct = () => {
@@ -667,27 +687,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #barcode-print-area, #barcode-print-area * { visibility: visible; }
-          #barcode-print-area { 
-            position: fixed; 
-            left: 50%; 
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: auto;
-            height: auto;
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            background: white;
-            z-index: 9999;
-          }
-          @page { margin: 0; size: auto; }
-        }
-      `}</style>
-
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 print:hidden">
         <div>
            <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm w-fit mb-4">
@@ -896,7 +895,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
 
              <div className="grid grid-cols-2 gap-4">
                <button onClick={() => setLabelProduct(null)} className="py-4 text-slate-500 font-bold bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all text-xs uppercase tracking-wider">Dismiss</button>
-               <button onClick={handlePrintLabel} className="py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider"><Printer size={18} /> Print Label</button>
+               <button onClick={handleDownloadBarcode} className="py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider"><Download size={18} /> Download PDF</button>
              </div>
           </div>
         </div>
@@ -923,21 +922,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
                 </div>
              </div>
           </div>
-        </div>
-      )}
-
-      {/* Hidden Print Area - Compact Sticker Format */}
-      {labelProduct && (
-        <div id="barcode-print-area" className="hidden print:block fixed inset-0 bg-white z-[9999]">
-           <div className="w-[50mm] h-[30mm] flex flex-col items-center justify-center text-center mx-auto mt-4 p-2 border border-slate-100 rounded-lg">
-              <h1 className="text-[10px] font-bold uppercase leading-tight mb-0.5 truncate w-full">{labelProduct.name}</h1>
-              <p className="text-[8px] font-mono mb-1">{labelProduct.sku}</p>
-              <svg 
-                ref={printBarcodeRef}
-                className="w-full h-auto max-h-[30px]"
-              />
-              <p className="text-xs font-black mt-1">{formatCurrency(labelProduct.price)}</p>
-           </div>
         </div>
       )}
 

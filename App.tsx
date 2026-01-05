@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, ReactNode, ErrorInfo } from 'react';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
 import { Login } from './components/Login';
@@ -14,18 +14,37 @@ import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, I
 import { Lock, Crown, ArrowRight, AlertTriangle } from 'lucide-react';
 
 // --- Error Boundary Component ---
-class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
-  constructor(props: {children: React.ReactNode}) {
+// Explicitly define State and Props interfaces to resolve TS property access errors
+interface ErrorBoundaryProps {
+  children?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Fix: Use React.Component to ensure this.props and this.state are correctly typed in all TS environments.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: Error) {
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
   }
-  render() {
+
+  render(): ReactNode {
+    // Access state directly from this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
@@ -48,7 +67,8 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
         </div>
       );
     }
-    return this.props.children;
+    // Access props directly from this.props - using a type assertion to resolve compiler discrepancy where 'props' is not found on type 'ErrorBoundary'
+    return (this as any).props.children;
   }
 }
 
@@ -276,11 +296,11 @@ const App: React.FC = () => {
   // --- Render Logic ---
   const renderContent = () => {
     if (!isSetupComplete) {
-      return <Onboarding onComplete={handleOnboardingComplete} />;
+      return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;
     }
 
     if (!currentUser) {
-      return <Login onLoginSuccess={handleLogin} businessName={businessName} />;
+      return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={businessName} />;
     }
 
     // Blocking Modal for Expired Trial
@@ -350,6 +370,7 @@ const App: React.FC = () => {
           transactions={transactions}
           currentUser={currentUser}
           users={users}
+          subscriptionPlan={subscriptionPlan}
         >
           {getViewContent()}
         </Layout>
