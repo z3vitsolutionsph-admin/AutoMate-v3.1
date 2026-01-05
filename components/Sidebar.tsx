@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobile
     { id: ViewState.REPORTING, label: 'Analytics', icon: BarChart3 },
     { id: ViewState.PROMOTER, label: 'Affiliates', icon: Users },
     { id: ViewState.SUPPORT, label: 'Intelligence', icon: LifeBuoy },
-    { id: ViewState.SETTINGS, label: 'Configuration', icon: Settings },
+    { id: ViewState.SETTINGS, label: 'Settings', icon: Settings },
   ];
 
   const navItems = allNavItems.filter(item => {

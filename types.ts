@@ -17,6 +17,18 @@ export enum UserRole {
   EMPLOYEE = 'EMPLOYEE'
 }
 
+export interface Business {
+  id: string;
+  name: string;
+  type: string;
+  address: string;
+  contactEmail?: string;
+  phone?: string;
+  isPrimary?: boolean;
+  tin?: string;
+  receiptFooter?: string;
+}
+
 export interface SystemUser {
   id: string;
   businessId?: string; // Linked to Supabase business table

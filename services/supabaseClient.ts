@@ -1,39 +1,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Configuration with provided credentials
-// NOTE: In a real production build, these should be strictly in .env files.
-const supabaseUrl = process.env.SUPABASE_URL || 'https://mjlmrpykezwgqftysyou.supabase.com';
-const supabaseKey = process.env.SUPABASE_KEY || 'sb_secret_xY_XrpNKdKdbUUavyt1Ujw_nff45Pcg';
+const SUPABASE_URL = 'https://qycwtizguezoqtktzdsw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5Y3d0aXpndWV6b3F0a3R6ZHN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2MDAzNjEsImV4cCI6MjA4MzE3NjM2MX0.EtuA180TQLTX95EQPlfZezi3BNl6u0hKqYiF9BErTrc';
 
-// Validation: Check if key is present and appears to be a valid string (basic sanity check)
-const isValidConfig = 
-  supabaseUrl && 
-  supabaseUrl.startsWith('https://') && 
-  supabaseKey && 
-  supabaseKey !== 'your-anon-key' && 
-  supabaseKey !== 'placeholder';
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export const supabase = createClient(
-  supabaseUrl,
-  isValidConfig ? supabaseKey : 'placeholder',
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-    global: {
-      headers: { 'x-application-name': 'AutoMateSystem-v3' }
-    },
-    // Improve retry logic for flaky connections
-    db: {
-      schema: 'public',
-    }
-  }
-);
-
-/**
- * Helper to check if Supabase is actually connected/configured.
- * Use this before attempting complex queries to fail fast or switch to local mode.
- */
-export const isSupabaseConfigured = () => isValidConfig;
+export const isSupabaseConfigured = () => true;

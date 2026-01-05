@@ -1,8 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Check, ArrowRight, User, Loader2, Sparkles, Lock, AlertCircle, Rocket, Image as ImageIcon, Briefcase, Building2, ShieldCheck, Terminal, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
 import { generateBusinessCategories, generateProductImage } from '../services/geminiService';
-import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { Logo } from './Logo';
 import { dbService } from '../services/dbService';
 
@@ -82,8 +82,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
   // Validation & Error Handling
   const [errors, setErrors] = useState<{name?: string, email?: string, password?: string, business?: string}>({});
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
-  const [deploymentError, setDeploymentError] = useState<string | null>(null);
-
+  
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -180,7 +179,6 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
 
   const handleFinalize = async () => {
     setDeploymentLogs([]);
-    setDeploymentError(null);
     addLog("Initializing deployment sequence...");
     
     const resultState = { 
@@ -189,76 +187,32 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
     };
 
     try {
-      // 1. Connectivity Check
-      addLog("Checking cloud node connectivity...");
-      if (!isSupabaseConfigured()) {
-        addLog("WARNING: Cloud credentials missing.");
-        throw new Error("Supabase URL/Key not configured in environment.");
-      }
-      addLog("Cloud node reachable.");
+      // Simulation of system setup (Local Mode)
+      addLog("Initializing Local Neural Node...");
+      await new Promise(r => setTimeout(r, 600));
+      addLog("Local storage structure allocated.");
 
-      // 2. Business Creation
       addLog(`Provisioning organization: ${businessName}...`);
-      const { data: businessData, error: businessError } = await supabase
-        .from('businesses')
-        .insert([{ name: businessName, type: businessType, subscription_plan: selectedPlan }])
-        .select().single();
+      await new Promise(r => setTimeout(r, 500));
+      addLog(`Organization ID: BIZ-${Date.now()} [OK]`);
 
-      if (businessError) throw new Error(`Business creation failed: ${businessError.message}`);
-      addLog(`Organization ID: ${businessData.id} [OK]`);
-
-      // 3. User Creation
       addLog(`Creating Master Authority profile for ${adminName}...`);
-      const { error: userError } = await supabase.from('users').insert([{ 
-          id: `USR-${Date.now()}`, // Client-side ID generation for offline capability
-          business_id: businessData.id, 
-          name: adminName, 
-          email: adminEmail, 
-          password: adminPassword, // Note: In production, hash this!
-          role: 'ADMIN_PRO', 
-          status: 'Active' 
-      }]);
-      if (userError) throw new Error(`User provisioning failed: ${userError.message}`);
+      await new Promise(r => setTimeout(r, 600));
       addLog("Master Authority profile created [OK]");
 
-      // 4. Inventory Migration
       addLog(`Migrating ${generatedProducts.length} synthetic assets to ledger...`);
-      if (generatedProducts.length > 0) {
-        const { error: productsError } = await supabase.from('products').insert(generatedProducts.map(p => ({
-          id: p.id,
-          business_id: businessData.id, 
-          name: p.name, 
-          sku: p.sku, 
-          category: p.category, 
-          price: p.price, 
-          stock: p.stock, 
-          image_url: p.imageUrl, 
-          description: p.description
-        })));
-        if (productsError) throw new Error(`Inventory migration failed: ${productsError.message}`);
-      }
+      // We don't save here, App.tsx handles the actual IndexedDB save to ensure flow control
+      await new Promise(r => setTimeout(r, 800));
       addLog("Inventory ledger synchronized [OK]");
 
-      // 5. Finalize
       addLog("System registry finalized.");
       addLog("Redirecting to Command Center...");
       
-      setTimeout(() => onComplete(resultState), 2000);
+      setTimeout(() => onComplete(resultState), 1500);
 
     } catch (error: any) {
       console.error("Deployment Error:", error);
-      addLog(`CRITICAL ERROR: ${error.message}`);
-      
-      // FALLBACK MECHANISM
-      addLog("Initiating failover protocol to Local Neural Node...");
-      try {
-        await dbService.saveItems('products', generatedProducts);
-        addLog("Local ledger secured.");
-        addLog("Deployment completed in OFFLINE mode.");
-        setTimeout(() => onComplete(resultState), 2500);
-      } catch (localErr) {
-        setDeploymentError("Fatal: Both Cloud and Local storage failed.");
-      }
+      addLog(`ERROR: ${error.message}`);
     }
   };
 
@@ -477,7 +431,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
         {/* STEP 4: System Provisioning (Terminal) */}
         {step === 4 && (
           <div className="flex-1 flex flex-col justify-center animate-in zoom-in-95 duration-500 w-full max-w-2xl mx-auto">
-            {!deploymentError && deploymentLogs.length > 0 && deploymentLogs[deploymentLogs.length - 1].includes("Redirecting") ? (
+            {deploymentLogs.length > 0 && deploymentLogs[deploymentLogs.length - 1].includes("Redirecting") ? (
               <div className="text-center space-y-8">
                 <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 border-4 border-emerald-100 animate-bounce"><Check size={56} strokeWidth={4} /></div>
                 <div>
@@ -504,23 +458,12 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                    ))}
                    <div ref={logsEndRef} />
                 </div>
-
-                {deploymentError && (
-                  <div className="mt-4 p-4 bg-rose-900/30 border border-rose-800 rounded-xl text-rose-300 flex items-start gap-3">
-                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold">Deployment Halted</p>
-                      <p className="opacity-80">{deploymentError}</p>
-                      <button onClick={handleFinalize} className="mt-2 text-xs bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider transition-colors">Retry Protocol</button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             
-            {!deploymentError && !deploymentLogs[deploymentLogs.length - 1]?.includes("Redirecting") && (
+            {!deploymentLogs[deploymentLogs.length - 1]?.includes("Redirecting") && (
                <p className="text-center mt-6 text-[10px] font-black uppercase tracking-widest text-slate-400 animate-pulse">
-                 Provisioning Cloud Infrastructure...
+                 Provisioning Local Node Infrastructure...
                </p>
             )}
           </div>

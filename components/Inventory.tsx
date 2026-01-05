@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Package, Search, Plus, Sparkles, AlertCircle, ScanBarcode, X, Loader2, 
@@ -127,6 +128,12 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
     }
     setIsEnhancing(true);
     try {
+      // Check API Key
+      if (aistudio) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        if (!hasKey) await aistudio.openSelectKey();
+      }
+
       const enhanced = await enhanceProductDetails(formData.name);
       setFormData(prev => ({ ...prev, category: enhanced.category || prev.category }));
       if (enhanced.descriptions && enhanced.descriptions.length > 0) {
@@ -137,7 +144,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
       }
       setErrors(prev => ({ ...prev, name: "" }));
     } catch (err) {
-      setErrors(prev => ({ ...prev, name: "AI node temporarily unavailable" }));
+      setErrors(prev => ({ ...prev, name: "AI node temporarily unavailable. Check API Key." }));
     } finally {
       setIsEnhancing(false);
     }
@@ -153,10 +160,14 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSave, pr
     setErrors(prev => ({ ...prev, imageUrl: "" }));
     
     try {
-      let base64Image = '';
-      if (mode === 'search') {
+      // Prompt for Key if needed
+      if (aistudio) {
         const hasKey = await aistudio.hasSelectedApiKey();
         if (!hasKey) await aistudio.openSelectKey();
+      }
+
+      let base64Image = '';
+      if (mode === 'search') {
         base64Image = await searchProductImage(context);
       } else {
         base64Image = await generateProductImage(context);

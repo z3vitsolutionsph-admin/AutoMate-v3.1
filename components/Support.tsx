@@ -1,8 +1,12 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, Bot, User, HelpCircle, Mail, Phone, Info } from 'lucide-react';
 import { ChatMessage, Product, Transaction } from '../types';
 import { getSupportResponse } from '../services/geminiService';
 import { formatCurrency } from '../constants';
+
+// Safely access window for AI Studio helpers
+const aistudio = (window as any).aistudio;
 
 interface SupportProps {
   products: Product[];
@@ -36,10 +40,16 @@ export const Support: React.FC<SupportProps> = ({ products, transactions }) => {
     setInput('');
     setIsTyping(true);
     try {
+      // Key Check
+      if (aistudio) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        if (!hasKey) await aistudio.openSelectKey();
+      }
+
       const replyText = await getSupportResponse(userMsg.text, storeContext);
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: replyText, timestamp: new Date() }]);
     } catch (error) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily delayed. Please verify connectivity.", timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily delayed. Please verify API Key.", timestamp: new Date() }]);
     } finally { setIsTyping(false); }
   };
 

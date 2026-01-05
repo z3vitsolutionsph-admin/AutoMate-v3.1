@@ -332,7 +332,7 @@ export const Layout: React.FC<LayoutProps> = ({
                                   onClick={() => { setView(ViewState.SETTINGS); setShowProfileMenu(false); }} 
                                   className="w-full text-left px-4 py-3 rounded-2xl text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 flex items-center gap-4 transition-all font-black uppercase tracking-widest"
                                 >
-                                    <Settings size={18} /> Configuration
+                                    <Settings size={18} /> Settings
                                 </button>
                                 <div className="h-px bg-slate-100 my-2 mx-2"></div>
                               </>

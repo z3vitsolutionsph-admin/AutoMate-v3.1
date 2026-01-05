@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, ReactNode, ErrorInfo } from 'react';
 import { Layout } from './Layout';
 import { Onboarding } from './Onboarding';
@@ -10,11 +11,12 @@ import { Reporting } from './Reporting';
 import { Promoter } from './Promoter';
 import { Support } from './Support';
 import { Settings } from './Settings';
-import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType } from '../types';
+import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType, Business } from '../types';
 import { Lock, Crown, ArrowRight, AlertTriangle } from 'lucide-react';
+import { dbService } from '../services/dbService';
+import { dataService } from '../services/dataService';
 
 // --- Error Boundary Component ---
-// Explicitly define State and Props interfaces to resolve TS property access errors
 interface ErrorBoundaryProps {
   children?: ReactNode;
 }
@@ -24,7 +26,6 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use React.Component to ensure this.props and this.state are correctly typed in all TS environments.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
@@ -44,7 +45,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
-    // Access state directly from this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
@@ -67,7 +67,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    // Access props directly from this.props - using a type assertion to resolve compiler discrepancy where 'props' is not found on type 'ErrorBoundary'
     return (this as any).props.children;
   }
 }
@@ -78,6 +77,7 @@ const App: React.FC = () => {
   const KEYS = {
     SETUP: `${STORAGE_PREFIX}setup`,
     BIZ_NAME: `${STORAGE_PREFIX}biz_name`,
+    BUSINESSES: `${STORAGE_PREFIX}businesses`,
     CATS: `${STORAGE_PREFIX}cats`,
     PRODUCTS: `${STORAGE_PREFIX}products`,
     SUPPLIERS: `${STORAGE_PREFIX}suppliers`,
@@ -106,9 +106,16 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
 
   // --- Business Ledger ---
+  // Legacy support: 'businessName' might be used for login display, but real business logic moves to 'businesses' array
   const [businessName, setBusinessName] = useState<string>(() => 
     localStorage.getItem(KEYS.BIZ_NAME) || 'AutoMateSystem Hub'
   );
+
+  const [businesses, setBusinesses] = useState<Business[]>(() => 
+    safeJsonParse<Business[]>(KEYS.BUSINESSES, [])
+  );
+
+  const [activeBusinessId, setActiveBusinessId] = useState<string>('');
 
   const [subscriptionPlan, setSubscriptionPlan] = useState<PlanType>(() => 
     (localStorage.getItem(KEYS.PLAN) as PlanType) || 'STARTER'
@@ -147,6 +154,76 @@ const App: React.FC = () => {
 
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
 
+  // --- Initialization & Active Business Logic ---
+  useEffect(() => {
+    // If setup is complete but businesses array is empty, create initial one from legacy businessName
+    if (isSetupComplete && businesses.length === 0) {
+      const initialBiz: Business = {
+        id: `BIZ-${Date.now()}`,
+        name: businessName,
+        type: 'General',
+        address: 'Main Headquarters',
+        isPrimary: true
+      };
+      setBusinesses([initialBiz]);
+      setActiveBusinessId(initialBiz.id);
+    } else if (isSetupComplete && businesses.length > 0 && !activeBusinessId) {
+      // Find primary or default to first
+      const primary = businesses.find(b => b.isPrimary);
+      setActiveBusinessId(primary ? primary.id : businesses[0].id);
+    }
+  }, [isSetupComplete, businesses, businessName, activeBusinessId]);
+
+  // --- Cloud Sync & Data Fetching ---
+  useEffect(() => {
+    if (isSetupComplete && activeBusinessId) {
+      const loadCloudData = async () => {
+        try {
+          // Attempt to flush offline queue first
+          await dataService.syncPending();
+
+          const [fetchedProducts, fetchedTransactions, fetchedSuppliers, fetchedUsers] = await Promise.all([
+            dataService.fetch<Product>('products', 'products', activeBusinessId),
+            dataService.fetch<Transaction>('transactions', 'transactions', activeBusinessId),
+            dataService.fetch<Supplier>('suppliers', 'suppliers', activeBusinessId),
+            dataService.fetch<SystemUser>('users', 'users', activeBusinessId)
+          ]);
+
+          if (fetchedProducts) setProducts(fetchedProducts);
+          if (fetchedTransactions) setTransactions(fetchedTransactions);
+          if (fetchedSuppliers) setSuppliers(fetchedSuppliers);
+          // Only update users if we have cloud data, otherwise keep legacy local users
+          if (fetchedUsers && fetchedUsers.length > 0) setUsers(fetchedUsers); 
+        } catch (error) {
+          console.error("Failed to sync with cloud:", error);
+        }
+      };
+      loadCloudData();
+      
+      // Setup listener for online status to trigger sync
+      const handleOnline = () => dataService.syncPending();
+      window.addEventListener('online', handleOnline);
+      return () => window.removeEventListener('online', handleOnline);
+    }
+  }, [isSetupComplete, activeBusinessId]);
+
+  // Derived Active Business Object
+  const activeBusiness = useMemo(() => 
+    businesses.find(b => b.id === activeBusinessId) || businesses[0] || { id: 'temp', name: 'Loading...', address: '', type: 'General' }
+  , [businesses, activeBusinessId]);
+
+  // Filtered Data based on Active Business
+  // Logic: Match businessId OR if businessId is missing/undefined, associate with the first business (Legacy compatibility)
+  const currentProducts = useMemo(() => {
+    if (!activeBusinessId) return [];
+    return products.filter(p => p.businessId === activeBusinessId || (!p.businessId && activeBusinessId === businesses[0]?.id));
+  }, [products, activeBusinessId, businesses]);
+
+  const currentTransactions = useMemo(() => {
+    if (!activeBusinessId) return [];
+    return transactions.filter(t => t.businessId === activeBusinessId || (!t.businessId && activeBusinessId === businesses[0]?.id));
+  }, [transactions, activeBusinessId, businesses]);
+
   // --- Session Persistence ---
   useEffect(() => {
     const sessionId = localStorage.getItem(KEYS.SESSION_USER);
@@ -154,7 +231,6 @@ const App: React.FC = () => {
       const user = users.find(u => u.id === sessionId);
       if (user) {
         setCurrentUser(user);
-        // If restoring session for employee, ensure they land on POS if they were on a restricted page
         if (user.role === UserRole.EMPLOYEE) {
            setCurrentView(prev => (prev === ViewState.DASHBOARD || prev === ViewState.SUPPORT) ? ViewState.POS : prev);
         }
@@ -162,11 +238,12 @@ const App: React.FC = () => {
     }
   }, [isSetupComplete, users]);
 
-  // --- Data Sync Layer ---
+  // --- Local Storage Backup Layer ---
   useEffect(() => {
     if (!isSetupComplete) return;
     localStorage.setItem(KEYS.SETUP, 'true');
     localStorage.setItem(KEYS.BIZ_NAME, businessName);
+    localStorage.setItem(KEYS.BUSINESSES, JSON.stringify(businesses));
     localStorage.setItem(KEYS.CATS, JSON.stringify(categories));
     localStorage.setItem(KEYS.USERS, JSON.stringify(users));
     localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(products));
@@ -179,10 +256,10 @@ const App: React.FC = () => {
     } else {
       localStorage.removeItem(KEYS.TRIAL_START);
     }
-  }, [isSetupComplete, businessName, categories, users, products, suppliers, transactions, integrations, subscriptionPlan, trialStartDate]);
+  }, [isSetupComplete, businessName, businesses, categories, users, products, suppliers, transactions, integrations, subscriptionPlan, trialStartDate]);
 
   // --- Handlers ---
-  const handleOnboardingComplete = useCallback((data: OnboardingState) => {
+  const handleOnboardingComplete = useCallback(async (data: OnboardingState) => {
     const adminUser: SystemUser = {
       id: `USR-${Date.now()}`,
       name: data.adminName,
@@ -195,11 +272,32 @@ const App: React.FC = () => {
     };
 
     setBusinessName(data.businessName);
+    
+    const newBusiness: Business = {
+      id: `BIZ-${Date.now()}`,
+      name: data.businessName,
+      type: data.businessType,
+      address: 'Main Headquarters',
+      contactEmail: data.adminEmail,
+      isPrimary: true
+    };
+    setBusinesses([newBusiness]);
+    setActiveBusinessId(newBusiness.id);
+
     setCategories(data.generatedCategories);
     setUsers([adminUser]);
     setSubscriptionPlan(data.selectedPlan);
     
-    // Set Trial Start if Starter Plan
+    // Initial Products with Business ID
+    const initialProducts = (data.generatedProducts || []).map(p => ({ ...p, businessId: newBusiness.id }));
+    setProducts(initialProducts);
+    
+    // Persist to Cloud & Local via DataService
+    await Promise.all([
+      dataService.upsert('users', 'users', adminUser, newBusiness.id),
+      dataService.upsertMany('products', 'products', initialProducts)
+    ]);
+    
     if (data.selectedPlan === 'STARTER') {
        const now = new Date().toISOString();
        localStorage.setItem(KEYS.TRIAL_START, now);
@@ -214,15 +312,70 @@ const App: React.FC = () => {
     localStorage.setItem(KEYS.SESSION_USER, adminUser.id);
   }, []);
 
-  const handleLogin = useCallback((email: string, pass: string) => {
-    const user = users.find(u => u.email === email && u.password === pass);
+  const handleLogin = useCallback(async (email: string, pass: string) => {
+    // 1. Local Authentication Check
+    let user = users.find(u => u.email === email && u.password === pass);
+
+    // 2. Cloud Authentication Check (Restore Mode)
+    if (!user) {
+       const result = await dataService.authenticate(email, pass);
+       if (result && result.user) {
+          // Map Cloud User to SystemUser
+          const cloudUser = result.user;
+          user = {
+            id: cloudUser.id,
+            businessId: cloudUser.business_id, // Map snake to camel
+            name: cloudUser.name,
+            email: cloudUser.email,
+            password: cloudUser.password, // In real app, this would be a token
+            role: cloudUser.role as UserRole,
+            status: cloudUser.status,
+            avatar: cloudUser.avatar,
+            createdAt: cloudUser.created_at ? new Date(cloudUser.created_at) : undefined,
+          };
+
+          // Bootstrap Business Data if retrieved
+          if (result.business) {
+             const cloudBiz = result.business;
+             const business: Business = {
+                id: cloudBiz.id,
+                name: cloudBiz.name,
+                type: cloudBiz.type,
+                address: cloudBiz.address,
+                contactEmail: cloudBiz.contact_email,
+                phone: cloudBiz.phone,
+                isPrimary: cloudBiz.is_primary,
+                tin: cloudBiz.tin,
+                receiptFooter: cloudBiz.receipt_footer
+             };
+             
+             // Update State immediately to unblock view
+             setBusinesses(prev => {
+                const exists = prev.find(b => b.id === business.id);
+                return exists ? prev : [business, ...prev];
+             });
+             if (business.isPrimary || !activeBusinessId) {
+                setBusinessName(business.name);
+                setActiveBusinessId(business.id);
+             }
+          }
+          
+          // Add verified user to local state and persistence
+          setUsers(prev => [...prev.filter(u => u.id !== user!.id), user!]);
+          await dbService.saveItems('users', [user]);
+       }
+    }
+
     if (user) {
       const updatedUser = { ...user, lastLogin: new Date() };
-      setUsers(prevUsers => prevUsers.map(u => u.id === user.id ? updatedUser : u));
+      setUsers(prevUsers => prevUsers.map(u => u.id === user!.id ? updatedUser : u));
       setCurrentUser(updatedUser);
+      
+      // Update last login in cloud
+      await dataService.upsert('users', 'users', updatedUser, updatedUser.businessId);
+      
       localStorage.setItem(KEYS.SESSION_USER, user.id);
       
-      // Auto-redirect Employees to POS/Terminal
       if (user.role === UserRole.EMPLOYEE) {
         setCurrentView(ViewState.POS);
       } else {
@@ -231,7 +384,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [users]);
+  }, [users, activeBusinessId]);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
@@ -239,24 +392,101 @@ const App: React.FC = () => {
     setCurrentView(ViewState.DASHBOARD);
   }, []);
 
-  const handleTransactionComplete = useCallback((newTransactions: Transaction[]) => {
-    setTransactions(prev => [...newTransactions, ...prev]);
+  const handleSaveBusiness = async (business: Business) => {
+    setBusinesses(prev => {
+      const exists = prev.find(b => b.id === business.id);
+      let updated;
+      if (exists) {
+        updated = prev.map(b => b.id === business.id ? business : b);
+      } else {
+        updated = [...prev, business];
+        // If it's a new business and we only had one (or none), switch to it automatically? 
+        if (prev.length === 0) setActiveBusinessId(business.id);
+      }
+      
+      // Update global legacy businessName if editing primary
+      if (business.isPrimary || (exists && businessName === exists.name)) {
+        setBusinessName(business.name);
+      }
+      
+      return updated;
+    });
+    // Note: Business syncing logic would go here if businesses table is standardized
+  };
+
+  const handleSwitchBusiness = (id: string) => {
+    setActiveBusinessId(id);
+  };
+
+  // --- CRUD Wrappers for Inventory/POS to inject Business ID ---
+
+  const handleTransactionComplete = useCallback(async (newTransactions: Transaction[]) => {
+    // Inject active business ID into transactions
+    const taggedTransactions = newTransactions.map(t => ({ ...t, businessId: activeBusinessId }));
+    
+    setTransactions(prev => [...taggedTransactions, ...prev]);
+    
+    // Persist Transactions
+    await dataService.upsertMany('transactions', 'transactions', taggedTransactions);
+
+    // Update stock levels
+    const updatedProducts: Product[] = [];
     setProducts(prevProducts => {
       const soldMap = new Map<string, number>();
-      newTransactions.forEach(tx => {
+      taggedTransactions.forEach(tx => {
         const product = prevProducts.find(p => p.id === tx.productId || p.name === tx.product);
         if (product) {
           const currentSold = soldMap.get(product.id) || 0;
           soldMap.set(product.id, currentSold + (tx.quantity || 1));
         }
       });
+      
       return prevProducts.map(p => {
         const soldQty = soldMap.get(p.id);
-        if (soldQty) return { ...p, stock: Math.max(0, p.stock - soldQty) };
+        if (soldQty !== undefined) {
+           const newStock = Math.max(0, p.stock - soldQty);
+           const updated = { ...p, stock: newStock };
+           updatedProducts.push(updated);
+           return updated;
+        }
         return p;
       });
     });
-  }, []);
+
+    // Persist Product Updates
+    if (updatedProducts.length > 0) {
+      await dataService.upsertMany('products', 'products', updatedProducts);
+    }
+
+  }, [activeBusinessId]);
+
+  const handleSaveProduct = async (product: Product) => {
+    const productToSave = { ...product, businessId: activeBusinessId };
+    setProducts(prev => {
+        const exists = prev.find(p => p.id === productToSave.id);
+        if (exists) return prev.map(p => p.id === productToSave.id ? productToSave : p);
+        return [productToSave, ...prev];
+    });
+    // Persist to Cloud & Local
+    await dataService.upsert('products', 'products', productToSave, activeBusinessId);
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    setProducts(prev => prev.filter(p => p.id !== product.id));
+    // Remove from Cloud & Local
+    await dataService.delete('products', 'products', product.id);
+  };
+
+  const handleSaveSupplier = async (supplier: Supplier) => {
+     const supplierToSave = { ...supplier, businessId: activeBusinessId };
+     setSuppliers(prev => {
+        const exists = prev.find(s => s.id === supplier.id);
+        if (exists) return prev.map(s => s.id === supplier.id ? supplierToSave : s);
+        return [supplierToSave, ...prev];
+     });
+     // Persist to Cloud & Local
+     await dataService.upsert('suppliers', 'suppliers', supplierToSave, activeBusinessId);
+  };
 
   // --- Trial Logic ---
   const isTrialExpired = useMemo(() => {
@@ -282,10 +512,9 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={businessName} />;
+    return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={activeBusiness.name} />;
   }
 
-  // Blocking Modal for Expired Trial
   if (isTrialExpired) {
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
@@ -314,17 +543,37 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (currentView) {
       case ViewState.DASHBOARD:
-        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
+        return <Dashboard transactions={currentTransactions} products={currentProducts} businessName={activeBusiness.name} role={currentUser.role} />;
       case ViewState.INVENTORY:
-        return <Inventory products={products} setProducts={setProducts} categories={categories} suppliers={suppliers} setSuppliers={setSuppliers} transactions={transactions} role={currentUser.role} />;
+        return <Inventory 
+          products={currentProducts} 
+          setProducts={setProducts} // Legacy prop, kept but logic overridden by onSaveProduct
+          onSaveProduct={handleSaveProduct}
+          onDeleteProduct={handleDeleteProduct}
+          categories={categories} 
+          suppliers={suppliers} 
+          setSuppliers={setSuppliers} // Legacy
+          onSaveSupplier={handleSaveSupplier}
+          transactions={currentTransactions} 
+          role={currentUser.role} 
+        />;
       case ViewState.POS:
-        return <POS products={products} onTransactionComplete={handleTransactionComplete} businessDetails={{ name: businessName, address: "Node Main", contact: currentUser.email, footerMessage: "Official Receipt" }} />;
+        return <POS 
+          products={currentProducts} 
+          onTransactionComplete={handleTransactionComplete} 
+          businessDetails={{ 
+            name: activeBusiness.name, 
+            address: activeBusiness.address || 'Main Node', 
+            contact: activeBusiness.phone || activeBusiness.contactEmail || currentUser.email, 
+            footerMessage: activeBusiness.receiptFooter || "Official Receipt" 
+          }} 
+        />;
       case ViewState.REPORTING:
-        return <Reporting transactions={transactions} products={products} />;
+        return <Reporting transactions={currentTransactions} products={currentProducts} />;
       case ViewState.PROMOTER:
         return <Promoter />;
       case ViewState.SUPPORT:
-        return <Support products={products} transactions={transactions} />;
+        return <Support products={currentProducts} transactions={currentTransactions} />;
       case ViewState.SETTINGS:
         return <Settings 
           integrations={integrations} 
@@ -334,9 +583,13 @@ const App: React.FC = () => {
           users={users} 
           setUsers={setUsers}
           subscriptionPlan={subscriptionPlan}
+          businesses={businesses}
+          onSaveBusiness={handleSaveBusiness}
+          activeBusinessId={activeBusinessId}
+          onSwitchBusiness={handleSwitchBusiness}
         />;
       default:
-        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
+        return <Dashboard transactions={currentTransactions} products={currentProducts} businessName={activeBusiness.name} role={currentUser.role} />;
     }
   };
 
@@ -346,10 +599,10 @@ const App: React.FC = () => {
         currentView={currentView} 
         setView={setCurrentView} 
         role={currentUser.role} 
-        businessName={businessName} 
+        businessName={activeBusiness.name} 
         onLogout={handleLogout}
-        products={products}
-        transactions={transactions}
+        products={currentProducts}
+        transactions={currentTransactions}
         currentUser={currentUser}
         users={users}
         subscriptionPlan={subscriptionPlan}

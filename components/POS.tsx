@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useDeferredValue, useCallback } from 'react';
 import { 
   Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, 
@@ -14,6 +15,7 @@ import {
 import { Product, CartItem, Transaction, HeldOrder } from '../types';
 import { formatCurrency } from '../constants';
 import { jsPDF } from 'jspdf';
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 
 interface POSProps {
   products: Product[];
@@ -92,6 +94,16 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [itemToRemove, setItemToRemove] = useState<CartItem | null>(null);
   
+  // --- Scanner State ---
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
+  const [scanStatus, setScanStatus] = useState<'idle' | 'scanned' | 'error'>('idle');
+  const [lastScannedProduct, setLastScannedProduct] = useState<string | null>(null);
+  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+  const [activeDeviceId, setActiveDeviceId] = useState<string | undefined>(undefined);
+
   // --- Payment Workflow State ---
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentPhase, setPaymentPhase] = useState<PaymentPhase>('METHOD_SELECT');
@@ -225,7 +237,7 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
     doc.text(new Date(lastReceipt.date).toLocaleString(), centerX, y, { align: 'center' });
     y += lineHeight + 2;
     
-    doc.setLineDash([1, 1], 0);
+    (doc as any).setLineDash([1, 1], 0);
     doc.line(leftX, y, rightX, y);
     y += lineHeight + 2;
 
@@ -283,6 +295,82 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
     doc.save(`Receipt-${lastReceipt.id}.pdf`);
   };
 
+  // --- Scanner Logic ---
+  useEffect(() => {
+    if (isScannerOpen) {
+      BrowserMultiFormatReader.listVideoInputDevices()
+        .then(devices => {
+          setAvailableDevices(devices);
+          // Auto-select back camera if not set
+          if (!activeDeviceId && devices.length > 0) {
+             const back = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
+             setActiveDeviceId(back ? back.deviceId : devices[0].deviceId);
+          }
+        })
+        .catch(err => console.error("Device detection failed", err));
+    }
+  }, [isScannerOpen]);
+
+  useEffect(() => {
+    if (isScannerOpen && videoRef.current && activeDeviceId) {
+      // Reset controls if changing camera
+      if (controlsRef.current) {
+         controlsRef.current.stop();
+         controlsRef.current = null;
+      }
+
+      const codeReader = new BrowserMultiFormatReader();
+      codeReader.decodeFromVideoDevice(activeDeviceId, videoRef.current, (result, err, controls) => {
+        if (result) {
+          const code = result.getText();
+          const now = Date.now();
+          // Debounce: prevent duplicate scans within 2 seconds
+          if (now - lastScanTimeRef.current > 2000) {
+             lastScanTimeRef.current = now;
+             
+             // Logic
+             const product = products.find(p => p.sku === code || p.id === code);
+             if (product) {
+               addToCart(product);
+               setScanStatus('scanned');
+               setLastScannedProduct(product.name);
+               setTimeout(() => {
+                  setScanStatus('idle');
+                  setLastScannedProduct(null);
+               }, 1500);
+             } else {
+               playBeep('error', terminalConfig.soundEnabled);
+               setScanStatus('error');
+               setLastScannedProduct(null);
+               setTimeout(() => setScanStatus('idle'), 1500);
+             }
+          }
+        }
+        if (controls) controlsRef.current = controls;
+      }).catch(err => console.error("Camera access failed", err));
+    } else {
+      // Cleanup when closed
+      if (controlsRef.current) {
+        controlsRef.current.stop();
+        controlsRef.current = null;
+      }
+    }
+
+    return () => {
+      if (controlsRef.current) {
+        controlsRef.current.stop();
+        controlsRef.current = null;
+      }
+    };
+  }, [isScannerOpen, activeDeviceId, products, addToCart, terminalConfig.soundEnabled]);
+
+  const toggleCamera = () => {
+    if (availableDevices.length < 2) return;
+    const currentIndex = availableDevices.findIndex(d => d.deviceId === activeDeviceId);
+    const nextIndex = (currentIndex + 1) % availableDevices.length;
+    setActiveDeviceId(availableDevices[nextIndex].deviceId);
+  };
+
   const filteredProducts = products.filter(p => 
     (selectedCategory === 'All' || p.category === selectedCategory) &&
     (p.name.toLowerCase().includes(deferredSearchTerm.toLowerCase()) || p.sku.toLowerCase().includes(deferredSearchTerm.toLowerCase()))
@@ -301,14 +389,24 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
       {/* STEP 1: Choose Item (Grid) */}
       <div className="flex-1 flex flex-col gap-3 overflow-hidden">
         <div className="bg-white border border-slate-200 p-3 rounded-[1.75rem] shadow-sm flex flex-col gap-3">
-          <div className="relative group">
-            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
-            <input 
-              placeholder="Query product registry..." 
-              value={searchTerm} 
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-xs font-semibold outline-none focus:ring-4 focus:ring-indigo-50 transition-all"
-            />
+          <div className="flex gap-2">
+            <div className="relative group flex-1">
+              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+              <input 
+                placeholder="Query product registry or SKU..." 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-xs font-semibold outline-none focus:ring-4 focus:ring-indigo-50 transition-all"
+              />
+            </div>
+            <button 
+              onClick={() => setIsScannerOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 group"
+              title="Open Scanner"
+            >
+              <ScanBarcode size={20} className="group-hover:scale-110 transition-transform" />
+              <span className="hidden md:inline ml-2 text-xs font-bold uppercase tracking-wide">Scan</span>
+            </button>
           </div>
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
              {categories.map(cat => (
@@ -438,6 +536,100 @@ export const POS: React.FC<POSProps> = ({ products, onTransactionComplete, busin
             </button>
          </div>
       </div>
+
+      {/* --- SCANNER MODAL --- */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+           {/* Close Button */}
+           <div className="absolute top-6 right-6 z-[210]">
+              <button onClick={() => setIsScannerOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all">
+                <X size={24} />
+              </button>
+           </div>
+           
+           {/* Camera Switcher */}
+           {availableDevices.length > 1 && (
+              <div className="absolute top-6 left-6 z-[210]">
+                 <button 
+                   onClick={toggleCamera} 
+                   className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all flex items-center gap-2 border border-white/10"
+                 >
+                   <RefreshCw size={20} />
+                   <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Switch Camera</span>
+                 </button>
+              </div>
+           )}
+           
+           <div className="w-full max-w-lg bg-black rounded-[2rem] overflow-hidden shadow-2xl relative border border-slate-800">
+              {/* Camera Feed */}
+              <div className="relative aspect-[3/4] bg-black">
+                 <video ref={videoRef} className="w-full h-full object-cover" />
+                 
+                 {/* Reticle Overlay */}
+                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className={`w-64 h-64 border-2 rounded-3xl relative transition-all duration-300 ${
+                        scanStatus === 'scanned' ? 'border-emerald-500 bg-emerald-500/10 shadow-[0_0_60px_rgba(16,185,129,0.4)]' : 
+                        scanStatus === 'error' ? 'border-rose-500 bg-rose-500/10 shadow-[0_0_60px_rgba(244,63,94,0.4)]' : 
+                        'border-white/30'
+                    }`}>
+                       {/* Corners */}
+                       <div className={`absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 rounded-tl-2xl -mt-0.5 -ml-0.5 transition-colors duration-300 ${scanStatus === 'scanned' ? 'border-emerald-400' : scanStatus === 'error' ? 'border-rose-500' : 'border-indigo-500'}`}></div>
+                       <div className={`absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 rounded-tr-2xl -mt-0.5 -mr-0.5 transition-colors duration-300 ${scanStatus === 'scanned' ? 'border-emerald-400' : scanStatus === 'error' ? 'border-rose-500' : 'border-indigo-500'}`}></div>
+                       <div className={`absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 rounded-bl-2xl -mb-0.5 -ml-0.5 transition-colors duration-300 ${scanStatus === 'scanned' ? 'border-emerald-400' : scanStatus === 'error' ? 'border-rose-500' : 'border-indigo-500'}`}></div>
+                       <div className={`absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 rounded-br-2xl -mb-0.5 -mr-0.5 transition-colors duration-300 ${scanStatus === 'scanned' ? 'border-emerald-400' : scanStatus === 'error' ? 'border-rose-500' : 'border-indigo-500'}`}></div>
+                       
+                       {/* Scanning Laser */}
+                       {scanStatus === 'idle' && (
+                          <div className="absolute top-0 left-0 w-full h-0.5 bg-indigo-500/80 shadow-[0_0_15px_rgba(99,102,241,1)] animate-scan"></div>
+                       )}
+
+                       {/* Central Feedback Icon */}
+                       {scanStatus === 'scanned' && (
+                          <div className="absolute inset-0 flex items-center justify-center animate-in zoom-in duration-200">
+                             <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg">
+                                <Check size={32} className="text-white" strokeWidth={4} />
+                             </div>
+                          </div>
+                       )}
+                       {scanStatus === 'error' && (
+                          <div className="absolute inset-0 flex items-center justify-center animate-in zoom-in duration-200">
+                             <div className="w-16 h-16 bg-rose-500 rounded-full flex items-center justify-center shadow-lg">
+                                <X size={32} className="text-white" strokeWidth={4} />
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+
+                 {/* Status Messages */}
+                 <div className="absolute bottom-8 inset-x-0 text-center space-y-3">
+                    {scanStatus === 'idle' && (
+                       <p className="inline-block bg-black/60 backdrop-blur-md text-white/80 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest border border-white/10">
+                         Align barcode within frame
+                       </p>
+                    )}
+                    {scanStatus === 'scanned' && (
+                       <div className="inline-flex items-center gap-2 bg-emerald-500/90 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-black uppercase tracking-widest shadow-xl animate-in zoom-in">
+                          <Check size={18} strokeWidth={3} /> {lastScannedProduct || 'Added to Cart'}
+                       </div>
+                    )}
+                    {scanStatus === 'error' && (
+                       <div className="inline-flex items-center gap-2 bg-rose-500/90 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-black uppercase tracking-widest shadow-xl animate-in zoom-in">
+                          <AlertTriangle size={18} strokeWidth={3} /> Unknown SKU
+                       </div>
+                    )}
+                 </div>
+              </div>
+              
+              {/* Footer */}
+              <div className="p-6 bg-slate-900 border-t border-slate-800 text-center">
+                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
+                   AutoMate™ Optical Recognition Node
+                 </p>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* --- PAYMENT MODAL WORKFLOW --- */}
       {showPaymentModal && (

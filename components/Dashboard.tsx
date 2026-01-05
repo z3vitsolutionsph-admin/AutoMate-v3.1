@@ -1,9 +1,13 @@
+
 import React, { useMemo, useState } from 'react';
 import { DollarSign, Clock, Users, Flame, AlertCircle, ArrowUpRight, Search, Bell, Receipt, History, UserCheck, Calendar, Check, ScrollText, FileText, Download, Sparkles, Loader2, BrainCircuit, X, TrendingUp, ShieldAlert, Target, Zap, Activity } from 'lucide-react';
 import { formatCurrency } from '../constants';
 import { Transaction, Product, UserRole } from '../types';
 import { performDeepAnalysis } from '../services/geminiService';
 import { StatCard } from './StatCard';
+
+// Safely access window for AI Studio helpers
+const aistudio = (window as any).aistudio;
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -37,11 +41,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products, bu
   const handleDeepScan = async () => {
     setIsAnalyzing(true);
     try {
+      // Key Check
+      if (aistudio) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        if (!hasKey) await aistudio.openSelectKey();
+      }
+
       const result = await performDeepAnalysis(products, transactions, businessName);
       setAnalysisResult(result);
       setShowAnalysisModal(true);
     } catch (err) {
       console.error(err);
+      alert("Intelligence Audit failed. Please ensure API Key is active.");
     } finally {
       setIsAnalyzing(false);
     }

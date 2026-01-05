@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, Loader2, KeyRound, Box, Store, Bot, BarChart3, ArrowLeft } from 'lucide-react';
 import { Logo } from './Logo';
 
 interface LoginProps {
-  onLoginSuccess: (email: string, pass: string) => boolean;
+  onLoginSuccess: (email: string, pass: string) => Promise<boolean>;
   onBack: () => void;
   businessName?: string;
 }
@@ -14,17 +15,25 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBack, businessNa
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-    setTimeout(() => {
-      const success = onLoginSuccess(email, password);
+    
+    try {
+      // Small artificial delay for UX smoothness if network is instant
+      const minDelay = new Promise(resolve => setTimeout(resolve, 800));
+      const [success] = await Promise.all([onLoginSuccess(email, password), minDelay]);
+      
       if (!success) {
-        setError("Invalid credentials. Please verify your access protocol.");
+        setError("Invalid credentials or node access denied.");
         setIsLoading(false);
       }
-    }, 1200);
+    } catch (err) {
+      console.error(err);
+      setError("Network error. Unable to verify credentials.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -76,7 +85,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBack, businessNa
                 <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center">
                   AutoMate<span className="text-xs font-bold self-start text-indigo-500">™</span>
                 </h1>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-3">Node: <span className="text-indigo-600 font-black">{businessName}</span></p>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-3">Node: <span className="text-indigo-600 font-black">{businessName || 'Unassigned'}</span></p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -103,7 +112,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBack, businessNa
                 </div>
 
                 <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
-                  {isLoading ? <><Loader2 className="animate-spin" size={20} /> Validating...</> : <>Unlock Terminal <ArrowRight size={20} /></>}
+                  {isLoading ? <><Loader2 className="animate-spin" size={20} /> Verifying...</> : <>Unlock Terminal <ArrowRight size={20} /></>}
                 </button>
               </form>
             </div>

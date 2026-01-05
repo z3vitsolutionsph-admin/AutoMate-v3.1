@@ -10,217 +10,203 @@ import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
 import { Settings } from './components/Settings';
-import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType } from './types';
+import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType, Business } from './types';
 import { Lock, Crown, ArrowRight, AlertTriangle, Loader2 } from 'lucide-react';
 import { dbService } from './services/dbService';
 import { dataService } from './services/dataService';
-import { isSupabaseConfigured } from './services/supabaseClient';
 
 // --- Error Boundary Component ---
-interface ErrorBoundaryProps { children?: ReactNode; }
-interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
+// Explicitly define State and Props interfaces to resolve TS property access errors
+interface ErrorBoundaryProps {
+  children?: ReactNode;
+}
 
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Fix: Use React.Component to ensure this.props and this.state are correctly typed in all TS environments.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false, error: null };
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught error:", error, errorInfo); }
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
   render(): ReactNode {
+    // Access state directly from this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
           <div className="max-w-md w-full bg-white p-10 rounded-[2.5rem] shadow-2xl border border-rose-100 text-center relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
-             <AlertTriangle size={36} className="mx-auto text-rose-500 mb-6" />
-             <h2 className="text-2xl font-black text-slate-900 mb-3">System Anomaly</h2>
-             <p className="text-slate-500 text-sm mb-4">Critical runtime error encountered.</p>
-             <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-xs">Reboot System</button>
+            <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
+            <div className="w-20 h-20 bg-rose-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-rose-500 shadow-xl shadow-rose-100">
+              <AlertTriangle size={36} strokeWidth={2.5} />
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">System Anomaly</h2>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">
+              The application encountered a critical runtime error. Diagnostics have been logged to the neural console.
+            </p>
+            <div className="bg-slate-50 p-5 rounded-2xl text-left mb-8 overflow-auto max-h-32 border border-slate-200 shadow-inner">
+               <code className="text-[10px] text-slate-600 font-mono break-all block">{this.state.error?.message}</code>
+            </div>
+            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl transition-all shadow-lg shadow-indigo-200 active:scale-95 uppercase tracking-widest text-xs">
+              Reboot System
+            </button>
           </div>
         </div>
       );
     }
+    // Access props directly from this.props - using a type assertion to resolve compiler discrepancy where 'props' is not found on type 'ErrorBoundary'
     return (this as any).props.children;
   }
 }
 
 const App: React.FC = () => {
+  // --- Constants & Storage ---
   const STORAGE_PREFIX = 'automate_v3_';
   const KEYS = {
     SETUP: `${STORAGE_PREFIX}setup`,
-    BIZ_NAME: `${STORAGE_PREFIX}biz_name`,
-    PLAN: `${STORAGE_PREFIX}plan`,
-    TRIAL_START: `${STORAGE_PREFIX}trial_start`,
+    BIZ_NAME: `${STORAGE_PREFIX}biz_name`, // Legacy single name
+    BUSINESSES: `${STORAGE_PREFIX}businesses`, // New array
     CATS: `${STORAGE_PREFIX}cats`,
+    PRODUCTS: `${STORAGE_PREFIX}products`,
+    SUPPLIERS: `${STORAGE_PREFIX}suppliers`,
+    TRANSACTIONS: `${STORAGE_PREFIX}transactions`,
+    USERS: `${STORAGE_PREFIX}users`,
+    SESSION_USER: `${STORAGE_PREFIX}session_user_id`,
     INTEGRATIONS: `${STORAGE_PREFIX}integrations`,
-    SESSION_USER: `${STORAGE_PREFIX}session_user_id`
+    PLAN: `${STORAGE_PREFIX}plan`,
+    TRIAL_START: `${STORAGE_PREFIX}trial_start`
+  };
+
+  const safeJsonParse = <T,>(key: string, fallback: T): T => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : fallback;
+    } catch {
+      return fallback;
+    }
   };
 
   // --- Core Engine State ---
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(false);
+  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => 
+    localStorage.getItem(KEYS.SETUP) === 'true'
+  );
   const [currentUser, setCurrentUser] = useState<SystemUser | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
 
-  // --- Data Stores ---
-  const [businessName, setBusinessName] = useState<string>('');
-  const [subscriptionPlan, setSubscriptionPlan] = useState<PlanType>('STARTER');
-  const [trialStartDate, setTrialStartDate] = useState<string | null>(null);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [integrations, setIntegrations] = useState<IntegrationConfig[]>([]);
+  // --- Business Ledger ---
+  const [businessName, setBusinessName] = useState<string>(() => 
+    localStorage.getItem(KEYS.BIZ_NAME) || 'AutoMateSystem Hub'
+  );
+
+  // New: Multiple Businesses State
+  const [businesses, setBusinesses] = useState<Business[]>(() => 
+    safeJsonParse<Business[]>(KEYS.BUSINESSES, [])
+  );
+
+  const [subscriptionPlan, setSubscriptionPlan] = useState<PlanType>(() => 
+    (localStorage.getItem(KEYS.PLAN) as PlanType) || 'STARTER'
+  );
+
+  const [trialStartDate, setTrialStartDate] = useState<string | null>(() => 
+    localStorage.getItem(KEYS.TRIAL_START)
+  );
+  
+  const [categories, setCategories] = useState<string[]>(() => 
+    safeJsonParse<string[]>(KEYS.CATS, ['Food', 'Beverage', 'Retail'])
+  );
+
+  const [users, setUsers] = useState<SystemUser[]>(() => 
+    safeJsonParse<SystemUser[]>(KEYS.USERS, [])
+  );
+
+  const [products, setProducts] = useState<Product[]>(() => 
+    safeJsonParse<Product[]>(KEYS.PRODUCTS, [])
+  );
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => 
+    safeJsonParse<Supplier[]>(KEYS.SUPPLIERS, [])
+  );
+  
+  const [transactions, setTransactions] = useState<Transaction[]>(() => 
+    safeJsonParse<Transaction[]>(KEYS.TRANSACTIONS, [])
+  );
+
+  const [integrations, setIntegrations] = useState<IntegrationConfig[]>(() => 
+    safeJsonParse<IntegrationConfig[]>(KEYS.INTEGRATIONS, [
+      { id: '1', provider: 'QUICKBOOKS', name: 'QuickBooks', status: 'DISCONNECTED', autoSync: false },
+      { id: '2', provider: 'XERO', name: 'Xero', status: 'DISCONNECTED', autoSync: false }
+    ])
+  );
+
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
 
-  // Large Datasets (Synced)
-  const [users, setUsers] = useState<SystemUser[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-
-  // --- Sync Listeners ---
+  // --- Initialization & Migration ---
   useEffect(() => {
-    // Attempt to sync pending items on load
-    dataService.syncPending();
+    // If setup is complete but businesses array is empty, create initial one from legacy businessName
+    if (isSetupComplete && businesses.length === 0) {
+      const initialBiz: Business = {
+        id: `BIZ-${Date.now()}`,
+        name: businessName,
+        type: 'General', // Default
+        address: 'Main Headquarters',
+        isPrimary: true
+      };
+      setBusinesses([initialBiz]);
+    }
+  }, [isSetupComplete, businesses.length, businessName]);
 
-    const handleOnline = () => {
-      console.log("Network restored. Initiating sync...");
-      dataService.syncPending();
-    };
-
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, []);
-
-  // --- Initialization (Sync from Cloud or Local) ---
+  // --- Session Persistence ---
   useEffect(() => {
-    const hydrate = async () => {
-      try {
-        // 1. Config from LocalStorage
-        const setup = localStorage.getItem(KEYS.SETUP) === 'true';
-        setBusinessName(localStorage.getItem(KEYS.BIZ_NAME) || 'AutoMateSystem Hub');
-        setSubscriptionPlan((localStorage.getItem(KEYS.PLAN) as PlanType) || 'STARTER');
-        setTrialStartDate(localStorage.getItem(KEYS.TRIAL_START));
-        setCategories(JSON.parse(localStorage.getItem(KEYS.CATS) || '["Food", "Retail"]'));
-        setIntegrations(JSON.parse(localStorage.getItem(KEYS.INTEGRATIONS) || '[]'));
-        setIsSetupComplete(setup);
-
-        // 2. Data from DataService (Supabase -> IndexedDB)
-        const [loadedProducts, loadedTx, loadedUsers, loadedSuppliers] = await Promise.all([
-          dataService.fetch<Product>('products', 'products'),
-          dataService.fetch<Transaction>('transactions', 'transactions'),
-          dataService.fetch<SystemUser>('users', 'users'),
-          dataService.fetch<Supplier>('suppliers', 'suppliers')
-        ]);
-
-        setProducts(loadedProducts);
-        setTransactions(loadedTx);
-        setUsers(loadedUsers);
-        setSuppliers(loadedSuppliers);
-
-        // 3. Session
-        const sessionId = localStorage.getItem(KEYS.SESSION_USER);
-        if (setup && sessionId && loadedUsers.length > 0) {
-          const user = loadedUsers.find(u => u.id === sessionId);
-          if (user) {
-            setCurrentUser(user);
-            if (user.role === UserRole.EMPLOYEE) setCurrentView(ViewState.POS);
-          }
+    const sessionId = localStorage.getItem(KEYS.SESSION_USER);
+    if (sessionId && isSetupComplete && users.length > 0) {
+      const user = users.find(u => u.id === sessionId);
+      if (user) {
+        setCurrentUser(user);
+        // If restoring session for employee, ensure they land on POS if they were on a restricted page
+        if (user.role === UserRole.EMPLOYEE) {
+           setCurrentView(prev => (prev === ViewState.DASHBOARD || prev === ViewState.SUPPORT) ? ViewState.POS : prev);
         }
-      } catch (e) {
-        console.error("Hydration Failed", e);
-      } finally {
-        setIsInitializing(false);
       }
-    };
+    }
+  }, [isSetupComplete, users]);
 
-    hydrate();
-  }, []);
-
-  // --- Local Config Persistence ---
+  // --- Data Sync Layer ---
   useEffect(() => {
-    if (!isInitializing && isSetupComplete) {
-       localStorage.setItem(KEYS.SETUP, 'true');
-       localStorage.setItem(KEYS.BIZ_NAME, businessName);
-       localStorage.setItem(KEYS.PLAN, subscriptionPlan);
-       if(trialStartDate) localStorage.setItem(KEYS.TRIAL_START, trialStartDate);
-       else localStorage.removeItem(KEYS.TRIAL_START);
-       localStorage.setItem(KEYS.CATS, JSON.stringify(categories));
-       localStorage.setItem(KEYS.INTEGRATIONS, JSON.stringify(integrations));
+    if (!isSetupComplete) return;
+    localStorage.setItem(KEYS.SETUP, 'true');
+    localStorage.setItem(KEYS.BIZ_NAME, businessName);
+    localStorage.setItem(KEYS.BUSINESSES, JSON.stringify(businesses));
+    localStorage.setItem(KEYS.CATS, JSON.stringify(categories));
+    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+    localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(products));
+    localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    localStorage.setItem(KEYS.INTEGRATIONS, JSON.stringify(integrations));
+    localStorage.setItem(KEYS.PLAN, subscriptionPlan);
+    if (trialStartDate) {
+      localStorage.setItem(KEYS.TRIAL_START, trialStartDate);
+    } else {
+      localStorage.removeItem(KEYS.TRIAL_START);
     }
-  }, [isInitializing, isSetupComplete, businessName, subscriptionPlan, trialStartDate, categories, integrations]);
-
-  // --- Centralized Data Mutators (Syncs to Cloud) ---
-  
-  const handleSaveProduct = async (product: Product) => {
-    // 1. Optimistic Update
-    setProducts(prev => {
-      const exists = prev.find(p => p.id === product.id);
-      if (exists) return prev.map(p => p.id === product.id ? product : p);
-      return [product, ...prev];
-    });
-    // 2. Persist
-    await dataService.upsert('products', 'products', product, currentUser?.businessId);
-  };
-
-  const handleDeleteProduct = async (product: Product) => {
-    setProducts(prev => prev.filter(p => p.id !== product.id));
-    await dataService.delete('products', 'products', product.id);
-  };
-
-  const handleSaveSupplier = async (supplier: Supplier) => {
-    setSuppliers(prev => {
-      const exists = prev.find(s => s.id === supplier.id);
-      if (exists) return prev.map(s => s.id === supplier.id ? supplier : s);
-      return [supplier, ...prev];
-    });
-    await dataService.upsert('suppliers', 'suppliers', supplier, currentUser?.businessId);
-  };
-
-  const handleSaveUser = async (user: SystemUser) => {
-    setUsers(prev => {
-      const exists = prev.find(u => u.id === user.id);
-      if (exists) return prev.map(u => u.id === user.id ? user : u);
-      return [...prev, user];
-    });
-    await dataService.upsert('users', 'users', user, currentUser?.businessId);
-  };
-
-  const handleTransactionComplete = useCallback(async (newTransactions: Transaction[]) => {
-    // 1. Update Transactions State
-    setTransactions(prev => [...newTransactions, ...prev]);
-    
-    // 2. Update Stock State
-    const soldMap = new Map<string, number>();
-    newTransactions.forEach(tx => {
-      soldMap.set(tx.productId!, (soldMap.get(tx.productId!) || 0) + (tx.quantity || 1));
-    });
-
-    // Update product stock in memory
-    const updatedProducts: Product[] = [];
-    setProducts(prevProducts => {
-      return prevProducts.map(p => {
-        const soldQty = soldMap.get(p.id);
-        if (soldQty) {
-          const updated = { ...p, stock: Math.max(0, p.stock - soldQty) };
-          updatedProducts.push(updated); // Collect for sync
-          return updated;
-        }
-        return p;
-      });
-    });
-
-    // 3. Persist to Cloud (Queue if offline)
-    // Save Transactions
-    for (const tx of newTransactions) {
-      await dataService.upsert('transactions', 'transactions', tx, currentUser?.businessId);
-    }
-    // Save Updated Products (Stock)
-    for (const p of updatedProducts) {
-      await dataService.upsert('products', 'products', p, currentUser?.businessId);
-    }
-  }, [currentUser]);
-
+  }, [isSetupComplete, businessName, businesses, categories, users, products, suppliers, transactions, integrations, subscriptionPlan, trialStartDate]);
 
   // --- Handlers ---
   const handleOnboardingComplete = useCallback(async (data: OnboardingState) => {
-    // Note: Onboarding component handles initial Supabase insertion.
     const adminUser: SystemUser = {
       id: `USR-${Date.now()}`,
       name: data.adminName,
@@ -233,18 +219,36 @@ const App: React.FC = () => {
     };
 
     setBusinessName(data.businessName);
+    
+    // Initialize Business Array
+    const newBusiness: Business = {
+      id: `BIZ-${Date.now()}`,
+      name: data.businessName,
+      type: data.businessType,
+      address: 'Main Headquarters',
+      contactEmail: data.adminEmail,
+      isPrimary: true
+    };
+    setBusinesses([newBusiness]);
+
     setCategories(data.generatedCategories);
     setUsers([adminUser]);
     setSubscriptionPlan(data.selectedPlan);
     
-    // Ensure local DB has the initial data
+    // Persist Initial Data to IndexedDB
+    await dbService.saveItems('users', [adminUser]);
     if (data.generatedProducts && data.generatedProducts.length > 0) {
       setProducts(data.generatedProducts);
       await dbService.saveItems('products', data.generatedProducts);
     }
     
     if (data.selectedPlan === 'STARTER') {
-       setTrialStartDate(new Date().toISOString());
+       const now = new Date().toISOString();
+       localStorage.setItem(KEYS.TRIAL_START, now);
+       setTrialStartDate(now);
+    } else {
+       localStorage.removeItem(KEYS.TRIAL_START);
+       setTrialStartDate(null);
     }
     
     setIsSetupComplete(true);
@@ -252,17 +256,15 @@ const App: React.FC = () => {
     localStorage.setItem(KEYS.SESSION_USER, adminUser.id);
   }, []);
 
-  const handleLogin = useCallback((email: string, pass: string) => {
+  const handleLogin = useCallback(async (email: string, pass: string) => {
     const user = users.find(u => u.email === email && u.password === pass);
     if (user) {
       const updatedUser = { ...user, lastLogin: new Date() };
-      // Update local and sync login time
-      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-      dataService.upsert('users', 'users', updatedUser, user.businessId);
-
+      setUsers(prevUsers => prevUsers.map(u => u.id === user.id ? updatedUser : u));
       setCurrentUser(updatedUser);
       localStorage.setItem(KEYS.SESSION_USER, user.id);
       
+      // Auto-redirect Employees to POS/Terminal
       if (user.role === UserRole.EMPLOYEE) {
         setCurrentView(ViewState.POS);
       } else {
@@ -279,32 +281,63 @@ const App: React.FC = () => {
     setCurrentView(ViewState.DASHBOARD);
   }, []);
 
+  const handleSaveBusiness = async (business: Business) => {
+    setBusinesses(prev => {
+      const exists = prev.find(b => b.id === business.id);
+      let updated;
+      if (exists) {
+        updated = prev.map(b => b.id === business.id ? business : b);
+      } else {
+        updated = [...prev, business];
+      }
+      
+      // If updating the primary or currently active business name, sync it
+      if (business.isPrimary || (exists && businessName === exists.name)) {
+        setBusinessName(business.name);
+      }
+      
+      return updated;
+    });
+  };
+
+  const handleTransactionComplete = useCallback((newTransactions: Transaction[]) => {
+    setTransactions(prev => [...newTransactions, ...prev]);
+    setProducts(prevProducts => {
+      const soldMap = new Map<string, number>();
+      newTransactions.forEach(tx => {
+        const product = prevProducts.find(p => p.id === tx.productId || p.name === tx.product);
+        if (product) {
+          const currentSold = soldMap.get(product.id) || 0;
+          soldMap.set(product.id, currentSold + (tx.quantity || 1));
+        }
+      });
+      return prevProducts.map(p => {
+        const soldQty = soldMap.get(p.id);
+        if (soldQty) return { ...p, stock: Math.max(0, p.stock - soldQty) };
+        return p;
+      });
+    });
+  }, []);
+
+  // --- Trial Logic ---
   const isTrialExpired = useMemo(() => {
     if (subscriptionPlan === 'STARTER' && trialStartDate) {
       const start = new Date(trialStartDate).getTime();
       const now = new Date().getTime();
-      return (now - start) > (5 * 24 * 60 * 60 * 1000);
+      const fiveDaysInMs = 5 * 24 * 60 * 60 * 1000;
+      return (now - start) > fiveDaysInMs;
     }
     return false;
   }, [subscriptionPlan, trialStartDate]);
 
   const upgradeToProfessional = () => {
     setSubscriptionPlan('PROFESSIONAL');
+    localStorage.setItem(KEYS.PLAN, 'PROFESSIONAL');
+    localStorage.removeItem(KEYS.TRIAL_START);
     setTrialStartDate(null);
   };
 
-  // --- Render ---
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-           <Loader2 size={48} className="text-indigo-600 animate-spin" />
-           <p className="text-xs font-black uppercase tracking-widest text-slate-400">Synchronizing Neural Node...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // --- Render Logic ---
   if (!isSetupComplete) {
     return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;
   }
@@ -313,60 +346,80 @@ const App: React.FC = () => {
     return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={businessName} />;
   }
 
+  // Blocking Modal for Expired Trial
   if (isTrialExpired) {
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-            <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl max-w-lg text-center space-y-6">
-                 <Crown size={48} className="mx-auto text-indigo-600 mb-4" />
+            <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl max-w-lg text-center space-y-6 relative overflow-hidden animate-in zoom-in-95">
+                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                 <div className="w-24 h-24 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto text-indigo-600 mb-4 shadow-xl shadow-indigo-100">
+                     <Crown size={48} />
+                 </div>
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Trial Period Ended</h2>
-                 <p className="text-slate-500 font-medium">Upgrade to Professional to continue.</p>
-                 <button onClick={upgradeToProfessional} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                     Upgrade <ArrowRight size={16} />
-                 </button>
+                 <p className="text-slate-500 font-medium leading-relaxed">
+                     Your 5-day Starter trial has concluded. To continue accessing your AutoMate™ intelligence node and data, please upgrade to the Professional plan.
+                 </p>
+                 <div className="pt-6">
+                     <button onClick={upgradeToProfessional} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs active:scale-95">
+                         Upgrade to Professional <ArrowRight size={16} />
+                     </button>
+                     <p className="mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2">
+                       <Lock size={12}/> Secure Payment Processing
+                     </p>
+                 </div>
             </div>
         </div>
     );
   }
 
-  const renderView = () => {
+  const renderContent = () => {
     switch (currentView) {
-      case ViewState.DASHBOARD: return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
-      // Pass centralized handlers to Inventory
-      case ViewState.INVENTORY: return <Inventory 
-          products={products} 
-          setProducts={setProducts} 
-          onSaveProduct={handleSaveProduct}
-          onDeleteProduct={handleDeleteProduct}
-          onSaveSupplier={handleSaveSupplier}
-          categories={categories} 
-          suppliers={suppliers} 
-          setSuppliers={setSuppliers} 
-          transactions={transactions} 
-          role={currentUser.role} 
+      case ViewState.DASHBOARD:
+        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
+      case ViewState.INVENTORY:
+        return <Inventory products={products} setProducts={setProducts} categories={categories} suppliers={suppliers} setSuppliers={setSuppliers} transactions={transactions} role={currentUser.role} />;
+      case ViewState.POS:
+        return <POS products={products} onTransactionComplete={handleTransactionComplete} businessDetails={{ name: businessName, address: "Node Main", contact: currentUser.email, footerMessage: "Official Receipt" }} />;
+      case ViewState.REPORTING:
+        return <Reporting transactions={transactions} products={products} />;
+      case ViewState.PROMOTER:
+        return <Promoter />;
+      case ViewState.SUPPORT:
+        return <Support products={products} transactions={transactions} />;
+      case ViewState.SETTINGS:
+        return <Settings 
+          integrations={integrations} 
+          setIntegrations={setIntegrations} 
+          syncLogs={syncLogs} 
+          setSyncLogs={setSyncLogs} 
+          users={users} 
+          setUsers={setUsers}
+          subscriptionPlan={subscriptionPlan}
+          businesses={businesses}
+          onSaveBusiness={handleSaveBusiness}
         />;
-      case ViewState.POS: return <POS products={products} onTransactionComplete={handleTransactionComplete} businessDetails={{ name: businessName, address: "Node Main", contact: currentUser.email, footerMessage: "Official Receipt" }} />;
-      case ViewState.REPORTING: return <Reporting transactions={transactions} products={products} />;
-      case ViewState.PROMOTER: return <Promoter />;
-      case ViewState.SUPPORT: return <Support products={products} transactions={transactions} />;
-      case ViewState.SETTINGS: return <Settings 
-          integrations={integrations} setIntegrations={setIntegrations} 
-          syncLogs={syncLogs} setSyncLogs={setSyncLogs} 
-          users={users} setUsers={setUsers} 
-          onSaveUser={handleSaveUser}
-          subscriptionPlan={subscriptionPlan} 
-        />;
-      default: return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
+      default:
+        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
     }
   };
 
   return (
-    <ErrorBoundary>
-      <RoleShell role={currentUser.role}>
-        <Layout currentView={currentView} setView={setCurrentView} role={currentUser.role} businessName={businessName} onLogout={handleLogout} products={products} transactions={transactions} currentUser={currentUser} users={users} subscriptionPlan={subscriptionPlan}>
-          {renderView()}
-        </Layout>
-      </RoleShell>
-    </ErrorBoundary>
+    <RoleShell role={currentUser.role}>
+      <Layout 
+        currentView={currentView} 
+        setView={setCurrentView} 
+        role={currentUser.role} 
+        businessName={businessName} 
+        onLogout={handleLogout}
+        products={products}
+        transactions={transactions}
+        currentUser={currentUser}
+        users={users}
+        subscriptionPlan={subscriptionPlan}
+      >
+        {renderContent()}
+      </Layout>
+    </RoleShell>
   );
 };
 
