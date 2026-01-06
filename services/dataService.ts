@@ -80,8 +80,9 @@ async function retryOperation<T>(
     const isFatalAuth = status === 401 || status === 403 || message.includes('jwt') || message.includes('invalid login');
     const isFatalValidation = status === 400 || status === 422;
     const isRLS = message.includes('row-level security') || message.includes('policy');
+    const isSchemaError = message.includes('has no field'); // Schema mismatch
 
-    if (isFatalAuth || isFatalValidation || isRLS) {
+    if (isFatalAuth || isFatalValidation || isRLS || isSchemaError) {
       // Don't retry these
       throw error;
     }
@@ -211,16 +212,24 @@ export const dataService = {
     return localData;
   },
 
-  async upsert<T extends { id: string }>(table: string, localStore: string, item: T, businessId?: string) {
+  async upsert<T extends { id: string }>(table: string, localStore: string, item: T, businessId?: string): Promise<boolean> {
     const itemToSave = { ...item };
-    if (businessId && table !== 'businesses') (itemToSave as any).businessId = businessId;
+    
+    // ARCHITECTURE FIX: The 'businesses' table is the root. It should NOT have a businessId column.
+    // Child tables (users, products) MUST have businessId.
+    if (table === 'businesses') {
+        // Ensure we don't accidentally send businessId to the businesses table
+        delete (itemToSave as any).businessId; 
+    } else if (businessId) {
+        (itemToSave as any).businessId = businessId;
+    }
     
     await dbService.saveItems(localStore, [itemToSave]);
 
     if (isSupabaseConfigured()) {
       if (!isOnline()) {
         await queueOfflineAction(table, 'UPSERT', itemToSave);
-        return;
+        return false;
       }
       try {
         await retryOperation(async () => {
@@ -228,12 +237,22 @@ export const dataService = {
           const { error } = await supabase.from(table).upsert(dbPayload);
           if (error) throw error;
         });
+        return true;
       } catch (err: any) {
         const message = err.message?.toLowerCase() || '';
         
         if (message.includes('row-level security') || message.includes('policy')) {
-           console.error(`[DataService] DATABASE PERMISSION ERROR: Please execute the 'Enable Public Access' SQL script in Supabase SQL Editor.`);
-           // We queue it so it syncs once the user fixes the DB permissions
+           console.error(`[DataService] DATABASE PERMISSION ERROR: Run the SQL fix in Supabase.`);
+           await queueOfflineAction(table, 'UPSERT', itemToSave);
+        }
+        else if (message.includes('foreign key constraint')) {
+           // Parent record missing (likely pending in queue), queue this to retry later
+           console.warn(`[DataService] FK Violation (Parent Missing). Queuing ${table} item.`);
+           await queueOfflineAction(table, 'UPSERT', itemToSave);
+        }
+        else if (message.includes('record "new" has no field')) {
+           console.error(`[DataService] SCHEMA MISMATCH: The database policy is checking a column that doesn't exist.`);
+           // Queue anyway, hoping the DB schema gets fixed
            await queueOfflineAction(table, 'UPSERT', itemToSave);
         }
         else if (message.includes('fetch') || message.includes('network') || message === 'device offline') {
@@ -241,8 +260,10 @@ export const dataService = {
         } else {
            console.error(`[DataService] Cloud Upsert Failure:`, err.message);
         }
+        return false;
       }
     }
+    return true;
   },
 
   async delete(table: string, localStore: string, id: string) {
@@ -278,6 +299,7 @@ export const dataService = {
           if (error) throw error;
         });
       } catch (err: any) {
+        // If bulk fail, queue individually
         for (const item of items) await queueOfflineAction(table, 'UPSERT', item);
       }
     }
@@ -288,13 +310,33 @@ export const dataService = {
     const queue = await dbService.getAll<OfflineAction>('offline_queue');
     if (queue.length === 0) return;
     
-    queue.sort((a, b) => a.timestamp - b.timestamp);
+    // CRITICAL: Sort queue by dependency order.
+    // 'businesses' table MUST be synced first because other tables reference it via FK.
+    queue.sort((a, b) => {
+        // 1. Businesses first
+        if (a.table === 'businesses' && b.table !== 'businesses') return -1;
+        if (a.table !== 'businesses' && b.table === 'businesses') return 1;
+        
+        // 2. Users second (often needed for audit logs)
+        if (a.table === 'users' && b.table !== 'users') return -1;
+        if (a.table !== 'users' && b.table === 'users') return 1;
+
+        // 3. Chronological order for everything else
+        return a.timestamp - b.timestamp;
+    });
+
     console.log(`[DataService] Processing ${queue.length} pending actions...`);
 
     for (const item of queue) {
       try {
         if (item.action === 'UPSERT') {
-          const dbPayload = mapToDb(item.data);
+          // IMPORTANT: Re-map and sanitize again right before sync
+          let cleanData = { ...item.data };
+          if (item.table === 'businesses') {
+             delete cleanData.businessId; 
+          }
+          
+          const dbPayload = mapToDb(cleanData);
           const { error } = await supabase.from(item.table).upsert(dbPayload);
           if (error) throw error;
         } else if (item.action === 'DELETE') {
@@ -305,18 +347,24 @@ export const dataService = {
       } catch (err: any) {
         const message = err.message?.toLowerCase() || '';
         
+        // Stop processing if permissions are broken to avoid spamming the log
         if (message.includes('row-level security') || message.includes('policy')) {
-           // Skip processing rest of queue if permissions are broken to avoid spamming errors
-           console.warn(`[DataService] Sync paused due to Database Permission Error. Run SQL fixes.`);
+           console.warn(`[DataService] Sync paused due to Database Permission Error.`);
            break;
         }
         
+        // Stop if network drops
         if (message.includes('fetch') || message.includes('network') || err.status >= 500) {
            console.warn(`[DataService] Sync paused due to network instability.`);
            break; 
-        } else {
+        } 
+        
+        // If it's still a Foreign Key error, maybe the parent failed in a previous loop?
+        // We increment retry count and try again later.
+        else {
            item.retryCount = (item.retryCount || 0) + 1;
            if (item.retryCount > MAX_QUEUE_RETRIES) {
+             console.error(`[DataService] Dropping item ${item.id} after max retries:`, err.message);
              await dbService.deleteItem('offline_queue', item.id);
            } else {
              await dbService.saveItems('offline_queue', [item]);
@@ -330,6 +378,7 @@ export const dataService = {
     if (!isSupabaseConfigured()) return [];
     const channels: RealtimeChannel[] = [];
     tables.forEach(table => {
+      // Businesses table filter is id, others are business_id
       const filter = table === 'businesses' ? `id=eq.${businessId}` : `business_id=eq.${businessId}`;
       
       const channel = supabase.channel(`public:${table}:${businessId}`)
@@ -370,6 +419,7 @@ export const dataService = {
       let cloudCount = 0;
       
       const allLocal = await dbService.getAll(t.store);
+      // Local count filtering
       const localCount = t.name === 'businesses' 
          ? allLocal.filter((i: any) => i.id === businessId).length
          : allLocal.filter((i: any) => i.businessId === businessId).length;
