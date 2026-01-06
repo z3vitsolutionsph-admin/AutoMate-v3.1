@@ -349,38 +349,48 @@ const App: React.FC = () => {
     localStorage.setItem(KEYS.SESSION_USER, adminUser.id);
   }, []);
 
-  const handleLogin = useCallback(async (email: string, pass: string) => {
+  const handleLogin = useCallback(async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    // 1. Check Local State (Offline First / Optimistic)
     let user = users.find(u => u.email === email && u.password === pass);
+    
+    // 2. If not local, try Cloud (Auth Service)
     if (!user) {
-       const result = await dataService.authenticate(email, pass);
-       if (result && result.user) {
-          user = result.user;
-          if (result.business) {
-             const biz = result.business;
-             setBusinesses(prev => {
-                const exists = prev.find(b => b.id === biz.id);
-                return exists ? prev : [biz, ...prev];
-             });
-             if (biz.isPrimary || !activeBusinessId) {
-                setBusinessName(biz.name);
-                setActiveBusinessId(biz.id);
-             }
+       const response = await dataService.authenticate(email, pass);
+       if (response.success && response.data?.user) {
+          user = response.data.user;
+          const biz = response.data.business;
+          
+          if (biz) {
+             setBusinesses(prev => { const exists = prev.find(b => b.id === biz.id); return exists ? prev : [biz, ...prev]; });
+             if (biz.isPrimary || !activeBusinessId) { setBusinessName(biz.name); setActiveBusinessId(biz.id); }
           }
+          
+          // Hydrate local state
           setUsers(prev => [...prev.filter(u => u.id !== user!.id), user!]);
           await dbService.saveItems('users', [user]);
+       } else {
+          // Return structured error from service
+          return { success: false, error: response.error || 'Authentication Failed' };
        }
     }
 
+    // 3. Success Path
     if (user) {
+      if (user.status !== 'Active') {
+          return { success: false, error: "Account Suspended. Contact Administrator." };
+      }
       const updatedUser = { ...user, lastLogin: new Date() };
       setUsers(prevUsers => prevUsers.map(u => u.id === user!.id ? updatedUser : u));
       setCurrentUser(updatedUser);
-      await dataService.upsert('users', 'users', updatedUser, updatedUser.businessId);
+      // Background sync update
+      dataService.upsert('users', 'users', updatedUser, updatedUser.businessId).catch(console.error);
+      
       localStorage.setItem(KEYS.SESSION_USER, user.id);
       setCurrentView(user.role === UserRole.EMPLOYEE ? ViewState.POS : ViewState.DASHBOARD);
-      return true;
+      return { success: true };
     }
-    return false;
+    
+    return { success: false, error: "Invalid credentials." };
   }, [users, activeBusinessId]);
 
   const handleLogout = useCallback(() => {
