@@ -45,6 +45,9 @@ const mapFromDb = (obj: any) => {
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 
+// Helper to check actual browser connectivity status
+const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine;
+
 async function retryOperation<T>(
   operation: () => Promise<T>, 
   retries = MAX_RETRIES,
@@ -53,13 +56,18 @@ async function retryOperation<T>(
   try {
     return await operation();
   } catch (error: any) {
-    const isRetryable = 
+    const isNetworkError = 
       error.message?.includes('fetch') || 
       error.message?.includes('network') || 
       (error.status && error.status >= 500);
 
-    if (retries > 0 && isRetryable) {
-      console.warn(`[DataService] Operation failed. Retrying in ${delay}ms... (${retries} attempts left)`);
+    // If we are definitely offline, don't retry, just fail fast so we can queue
+    if (!isOnline()) {
+      throw new Error("Device offline");
+    }
+
+    if (retries > 0 && isNetworkError) {
+      console.warn(`[DataService] Network glitch detected. Retrying in ${delay}ms... (${retries} attempts left)`);
       await wait(delay);
       return retryOperation(operation, retries - 1, delay * 2);
     }
@@ -82,7 +90,7 @@ async function queueOfflineAction(table: string, action: 'UPSERT' | 'DELETE', da
 export const dataService = {
   
   async authenticate(email: string, pass: string) {
-    if (!isSupabaseConfigured()) return null;
+    if (!isSupabaseConfigured() || !isOnline()) return null;
     try {
       const { data: user, error } = await supabase
         .from('users')
@@ -108,13 +116,13 @@ export const dataService = {
       return { user: mapFromDb(user), business };
     } catch (err) {
       console.error("Auth error:", err);
-      // Determine if it's a network error to give better feedback ui-side if needed
       return null;
     }
   },
 
   async fetch<T>(table: string, localStore: string, businessId?: string): Promise<T[]> {
-    if (isSupabaseConfigured()) {
+    // 1. Try Cloud if Online
+    if (isSupabaseConfigured() && isOnline()) {
       try {
         const cloudData = await retryOperation(async () => {
           let query = supabase.from(table).select('*');
@@ -126,13 +134,16 @@ export const dataService = {
 
         if (cloudData) {
           const normalizedData = cloudData.map(mapFromDb);
+          // Update local cache
           await dbService.saveItems(localStore, normalizedData);
           return normalizedData as T[];
         }
       } catch (err: any) {
-        console.warn(`[DataService] Cloud unreachable for ${table}. Serving local data.`);
+        console.warn(`[DataService] Cloud fetch failed for ${table} (Offline/Error). Serving local cache.`);
       }
     }
+    
+    // 2. Fallback to Local
     const localData = await dbService.getAll<T>(localStore);
     if (businessId && localData.length > 0) {
       return localData.filter((item: any) => !item.businessId || item.businessId === businessId) as T[];
@@ -145,9 +156,18 @@ export const dataService = {
     if (businessId) (itemToSave as any).businessId = businessId;
     if (!(itemToSave as any).updatedAt) (itemToSave as any).updatedAt = new Date().toISOString();
 
+    // 1. Always save to Local DB first (Optimistic UI)
     await dbService.saveItems(localStore, [itemToSave]);
 
+    // 2. Attempt Cloud Sync
     if (isSupabaseConfigured()) {
+      // Fast exit if offline
+      if (!isOnline()) {
+        console.log(`[DataService] Device offline. Queued ${table} upsert.`);
+        await queueOfflineAction(table, 'UPSERT', itemToSave);
+        return;
+      }
+
       try {
         await retryOperation(async () => {
           const dbPayload = mapToDb(itemToSave);
@@ -155,7 +175,13 @@ export const dataService = {
           if (error) throw error;
         });
       } catch (err: any) {
-        console.error(`[DataService] Cloud upsert failed for ${table}:`, err.message);
+        const isNetworkError = err.message?.includes('fetch') || err.message?.includes('network') || err.message === 'Device offline';
+        
+        if (isNetworkError) {
+           console.warn(`[DataService] Connection interrupted. Added ${table} to offline queue.`);
+        } else {
+           console.error(`[DataService] API Error for ${table}:`, err.message);
+        }
         await queueOfflineAction(table, 'UPSERT', itemToSave);
       }
     }
@@ -163,7 +189,13 @@ export const dataService = {
 
   async delete(table: string, localStore: string, id: string) {
     await dbService.deleteItem(localStore, id);
+    
     if (isSupabaseConfigured()) {
+      if (!isOnline()) {
+        await queueOfflineAction(table, 'DELETE', { id });
+        return;
+      }
+
       try {
         await retryOperation(async () => {
           const { error } = await supabase.from(table).delete().eq('id', id);
@@ -178,7 +210,14 @@ export const dataService = {
   async upsertMany<T extends { id: string }>(table: string, localStore: string, items: T[]) {
     if (items.length === 0) return;
     await dbService.saveItems(localStore, items);
+    
     if (isSupabaseConfigured()) {
+      if (!isOnline()) {
+        console.log(`[DataService] Device offline. Queued batch upsert for ${table}.`);
+        for (const item of items) await queueOfflineAction(table, 'UPSERT', item);
+        return;
+      }
+
       try {
         await retryOperation(async () => {
           const dbItems = items.map(mapToDb);
@@ -186,13 +225,15 @@ export const dataService = {
           if (error) throw error;
         });
       } catch (err: any) {
+        console.warn(`[DataService] Batch sync failed. Queuing individually.`);
         for (const item of items) await queueOfflineAction(table, 'UPSERT', item);
       }
     }
   },
 
   async syncPending() {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured() || !isOnline()) return;
+    
     const queue = await dbService.getAll<OfflineAction>('offline_queue');
     if (queue.length === 0) return;
     
@@ -217,22 +258,18 @@ export const dataService = {
         const isNetworkError = err.message?.includes('fetch') || err.message?.includes('network');
         const isServerError = err.status >= 500;
         
-        // Update retry count
         item.retryCount = (item.retryCount || 0) + 1;
 
         if (isNetworkError || isServerError) {
-           // Transient error: Keep in queue, but maybe update retry count in DB if we wanted to be strict
-           // For now, we just stop syncing to avoid hammering the network
-           console.warn(`[DataService] Sync paused due to network error: ${err.message}`);
+           // If network fails during sync, stop processing queue to maintain order
+           console.warn(`[DataService] Sync paused due to network instability.`);
            break; 
         } else {
-           // Client Error (4xx) or Data Logic Error:
-           // If we've retried too many times, drop it to unblock the queue
+           // Data/Logic error (e.g. Constraint violation)
            if (item.retryCount > MAX_QUEUE_RETRIES) {
-             console.error(`[DataService] Dropping action ${item.id} after ${MAX_QUEUE_RETRIES} failed attempts. Error: ${err.message}`);
+             console.error(`[DataService] Dropping malformed action ${item.id} after ${MAX_QUEUE_RETRIES} attempts.`);
              await dbService.deleteItem('offline_queue', item.id);
            } else {
-             // Update the item in DB with new retry count
              await dbService.saveItems('offline_queue', [item]);
            }
         }
