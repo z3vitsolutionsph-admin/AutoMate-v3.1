@@ -1,14 +1,13 @@
 
 // IndexedDB Wrapper for handling large datasets (Images, Products) that exceed LocalStorage quotas.
 const DB_NAME = 'AutoMate_v3_DB';
-const DB_VERSION = 3; // Version 3 adds indices
-const STORES = ['products', 'transactions', 'users', 'suppliers', 'offline_queue'];
+const DB_VERSION = 5; // Incremented for referrals store addition
+const STORES = ['products', 'transactions', 'users', 'suppliers', 'offline_queue', 'businesses', 'referrals'];
 
 export const dbService = {
   // Initialize Database
   open: (): Promise<IDBDatabase> => {
     return new Promise((resolve, reject) => {
-      // Check if IndexedDB is supported
       if (!window.indexedDB) {
         reject(new Error("IndexedDB not supported in this environment"));
         return;
@@ -31,16 +30,15 @@ export const dbService = {
             const store = db.createObjectStore(storeName, { keyPath: 'id' });
             
             // Create Indices for faster local querying
-            if (storeName !== 'offline_queue') {
+            if (storeName !== 'offline_queue' && storeName !== 'businesses') {
               store.createIndex('business_id', 'businessId', { unique: false });
             }
             if (storeName === 'transactions') {
               store.createIndex('date', 'date', { unique: false });
             }
           } else {
-             // Upgrade existing stores if needed
              const store = (event.target as IDBOpenDBRequest).transaction?.objectStore(storeName);
-             if (store && storeName !== 'offline_queue' && !store.indexNames.contains('business_id')) {
+             if (store && storeName !== 'offline_queue' && storeName !== 'businesses' && !store.indexNames.contains('business_id')) {
                 store.createIndex('business_id', 'businessId', { unique: false });
              }
           }

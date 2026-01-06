@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, ReactNode, ErrorInfo } from 'react';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
@@ -10,13 +11,13 @@ import { Reporting } from './components/Reporting';
 import { Promoter } from './components/Promoter';
 import { Support } from './components/Support';
 import { Settings } from './components/Settings';
-import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType, Business } from './types';
+import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType, Business, Referral } from '../types';
 import { Lock, Crown, ArrowRight, AlertTriangle, Loader2 } from 'lucide-react';
-import { dbService } from './services/dbService';
-import { dataService } from './services/dataService';
+import { dbService } from '../services/dbService';
+import { dataService } from '../services/dataService';
+import { supabase } from '../services/supabaseClient';
 
 // --- Error Boundary Component ---
-// Explicitly define State and Props interfaces to resolve TS property access errors
 interface ErrorBoundaryProps {
   children?: ReactNode;
 }
@@ -26,7 +27,6 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use React.Component to ensure this.props and this.state are correctly typed in all TS environments.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
@@ -46,7 +46,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
-    // Access state directly from this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
@@ -69,7 +68,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    // Access props directly from this.props - using a type assertion to resolve compiler discrepancy where 'props' is not found on type 'ErrorBoundary'
     return (this as any).props.children;
   }
 }
@@ -79,8 +77,8 @@ const App: React.FC = () => {
   const STORAGE_PREFIX = 'automate_v3_';
   const KEYS = {
     SETUP: `${STORAGE_PREFIX}setup`,
-    BIZ_NAME: `${STORAGE_PREFIX}biz_name`, // Legacy single name
-    BUSINESSES: `${STORAGE_PREFIX}businesses`, // New array
+    BIZ_NAME: `${STORAGE_PREFIX}biz_name`,
+    BUSINESSES: `${STORAGE_PREFIX}businesses`,
     CATS: `${STORAGE_PREFIX}cats`,
     PRODUCTS: `${STORAGE_PREFIX}products`,
     SUPPLIERS: `${STORAGE_PREFIX}suppliers`,
@@ -101,83 +99,155 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Core Engine State ---
   const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => 
     localStorage.getItem(KEYS.SETUP) === 'true'
   );
   const [currentUser, setCurrentUser] = useState<SystemUser | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-
-  // --- Business Ledger ---
   const [businessName, setBusinessName] = useState<string>(() => 
     localStorage.getItem(KEYS.BIZ_NAME) || 'AutoMateSystem Hub'
   );
-
-  // New: Multiple Businesses State
   const [businesses, setBusinesses] = useState<Business[]>(() => 
     safeJsonParse<Business[]>(KEYS.BUSINESSES, [])
   );
-
+  const [activeBusinessId, setActiveBusinessId] = useState<string>('');
   const [subscriptionPlan, setSubscriptionPlan] = useState<PlanType>(() => 
     (localStorage.getItem(KEYS.PLAN) as PlanType) || 'STARTER'
   );
-
   const [trialStartDate, setTrialStartDate] = useState<string | null>(() => 
     localStorage.getItem(KEYS.TRIAL_START)
   );
-  
   const [categories, setCategories] = useState<string[]>(() => 
     safeJsonParse<string[]>(KEYS.CATS, ['Food', 'Beverage', 'Retail'])
   );
-
   const [users, setUsers] = useState<SystemUser[]>(() => 
     safeJsonParse<SystemUser[]>(KEYS.USERS, [])
   );
-
   const [products, setProducts] = useState<Product[]>(() => 
     safeJsonParse<Product[]>(KEYS.PRODUCTS, [])
   );
-
   const [suppliers, setSuppliers] = useState<Supplier[]>(() => 
     safeJsonParse<Supplier[]>(KEYS.SUPPLIERS, [])
   );
-  
   const [transactions, setTransactions] = useState<Transaction[]>(() => 
     safeJsonParse<Transaction[]>(KEYS.TRANSACTIONS, [])
   );
-
   const [integrations, setIntegrations] = useState<IntegrationConfig[]>(() => 
     safeJsonParse<IntegrationConfig[]>(KEYS.INTEGRATIONS, [
       { id: '1', provider: 'QUICKBOOKS', name: 'QuickBooks', status: 'DISCONNECTED', autoSync: false },
       { id: '2', provider: 'XERO', name: 'Xero', status: 'DISCONNECTED', autoSync: false }
     ])
   );
-
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
 
-  // --- Initialization & Migration ---
   useEffect(() => {
-    // If setup is complete but businesses array is empty, create initial one from legacy businessName
     if (isSetupComplete && businesses.length === 0) {
       const initialBiz: Business = {
         id: `BIZ-${Date.now()}`,
         name: businessName,
-        type: 'General', // Default
+        type: 'General',
         address: 'Main Headquarters',
         isPrimary: true
       };
       setBusinesses([initialBiz]);
+      setActiveBusinessId(initialBiz.id);
+    } else if (isSetupComplete && businesses.length > 0 && !activeBusinessId) {
+      const primary = businesses.find(b => b.isPrimary);
+      setActiveBusinessId(primary ? primary.id : businesses[0].id);
     }
-  }, [isSetupComplete, businesses.length, businessName]);
+  }, [isSetupComplete, businesses, businessName, activeBusinessId]);
 
-  // --- Session Persistence ---
+  useEffect(() => {
+    if (isSetupComplete && activeBusinessId) {
+      const loadCloudData = async () => {
+        try {
+          await dataService.syncPending();
+          const [fetchedProducts, fetchedTransactions, fetchedSuppliers, fetchedUsers, fetchedReferrals] = await Promise.all([
+            dataService.fetch<Product>('products', 'products', activeBusinessId),
+            dataService.fetch<Transaction>('transactions', 'transactions', activeBusinessId),
+            dataService.fetch<Supplier>('suppliers', 'suppliers', activeBusinessId),
+            dataService.fetch<SystemUser>('users', 'users', activeBusinessId),
+            dataService.fetch<Referral>('referrals', 'referrals', activeBusinessId)
+          ]);
+          if (fetchedProducts) setProducts(fetchedProducts);
+          if (fetchedTransactions) setTransactions(fetchedTransactions);
+          if (fetchedSuppliers) setSuppliers(fetchedSuppliers);
+          if (fetchedUsers && fetchedUsers.length > 0) setUsers(fetchedUsers); 
+          if (fetchedReferrals) setReferrals(fetchedReferrals);
+        } catch (error) {
+          console.error("Failed to sync with cloud:", error);
+        }
+      };
+      loadCloudData();
+      
+      const channels = dataService.subscribeToChanges(
+        ['products', 'transactions', 'suppliers', 'users', 'referrals'], 
+        activeBusinessId, 
+        (change) => {
+           if (change.table === 'products') {
+              setProducts(prev => {
+                 if (change.event === 'DELETE') return prev.filter(p => p.id !== change.data.id);
+                 const exists = prev.find(p => p.id === change.data.id);
+                 return exists ? prev.map(p => p.id === change.data.id ? change.data : p) : [change.data, ...prev];
+              });
+           } else if (change.table === 'transactions') {
+              setTransactions(prev => {
+                 if (change.event === 'DELETE') return prev.filter(t => t.id !== change.data.id);
+                 const exists = prev.find(t => t.id === change.data.id);
+                 return exists ? prev.map(t => t.id === change.data.id ? change.data : t) : [change.data, ...prev];
+              });
+           } else if (change.table === 'suppliers') {
+              setSuppliers(prev => {
+                 if (change.event === 'DELETE') return prev.filter(s => s.id !== change.data.id);
+                 const exists = prev.find(s => s.id === change.data.id);
+                 return exists ? prev.map(s => s.id === change.data.id ? change.data : s) : [change.data, ...prev];
+              });
+           } else if (change.table === 'users') {
+              setUsers(prev => {
+                 if (change.event === 'DELETE') return prev.filter(u => u.id !== change.data.id);
+                 const exists = prev.find(u => u.id === change.data.id);
+                 return exists ? prev.map(u => u.id === change.data.id ? change.data : u) : [change.data, ...prev];
+              });
+           } else if (change.table === 'referrals') {
+              setReferrals(prev => {
+                 if (change.event === 'DELETE') return prev.filter(r => r.id !== change.data.id);
+                 const exists = prev.find(r => r.id === change.data.id);
+                 return exists ? prev.map(r => r.id === change.data.id ? change.data : r) : [change.data, ...prev];
+              });
+           }
+        }
+      );
+      
+      const handleOnline = () => dataService.syncPending();
+      window.addEventListener('online', handleOnline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        channels.forEach(c => supabase.removeChannel(c));
+      };
+    }
+  }, [isSetupComplete, activeBusinessId]);
+
+  const activeBusiness = useMemo(() => 
+    businesses.find(b => b.id === activeBusinessId) || businesses[0] || { id: 'temp', name: 'Loading...', address: '', type: 'General' }
+  , [businesses, activeBusinessId]);
+
+  const currentProducts = useMemo(() => {
+    if (!activeBusinessId) return [];
+    return products.filter(p => p.businessId === activeBusinessId);
+  }, [products, activeBusinessId]);
+
+  const currentTransactions = useMemo(() => {
+    if (!activeBusinessId) return [];
+    return transactions.filter(t => t.businessId === activeBusinessId);
+  }, [transactions, activeBusinessId]);
+
   useEffect(() => {
     const sessionId = localStorage.getItem(KEYS.SESSION_USER);
     if (sessionId && isSetupComplete && users.length > 0) {
       const user = users.find(u => u.id === sessionId);
       if (user) {
         setCurrentUser(user);
-        // If restoring session for employee, ensure they land on POS if they were on a restricted page
         if (user.role === UserRole.EMPLOYEE) {
            setCurrentView(prev => (prev === ViewState.DASHBOARD || prev === ViewState.SUPPORT) ? ViewState.POS : prev);
         }
@@ -185,7 +255,6 @@ const App: React.FC = () => {
     }
   }, [isSetupComplete, users]);
 
-  // --- Data Sync Layer ---
   useEffect(() => {
     if (!isSetupComplete) return;
     localStorage.setItem(KEYS.SETUP, 'true');
@@ -198,17 +267,24 @@ const App: React.FC = () => {
     localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(transactions));
     localStorage.setItem(KEYS.INTEGRATIONS, JSON.stringify(integrations));
     localStorage.setItem(KEYS.PLAN, subscriptionPlan);
-    if (trialStartDate) {
-      localStorage.setItem(KEYS.TRIAL_START, trialStartDate);
-    } else {
-      localStorage.removeItem(KEYS.TRIAL_START);
-    }
+    if (trialStartDate) localStorage.setItem(KEYS.TRIAL_START, trialStartDate);
+    else localStorage.removeItem(KEYS.TRIAL_START);
   }, [isSetupComplete, businessName, businesses, categories, users, products, suppliers, transactions, integrations, subscriptionPlan, trialStartDate]);
 
-  // --- Handlers ---
   const handleOnboardingComplete = useCallback(async (data: OnboardingState) => {
+    const bizId = `BIZ-${Date.now()}`;
+    const newBusiness: Business = {
+      id: bizId,
+      name: data.businessName,
+      type: data.businessType,
+      address: 'Main Headquarters',
+      contactEmail: data.adminEmail,
+      isPrimary: true
+    };
+
     const adminUser: SystemUser = {
       id: `USR-${Date.now()}`,
+      businessId: bizId,
       name: data.adminName,
       email: data.adminEmail,
       password: data.adminPassword,
@@ -218,37 +294,29 @@ const App: React.FC = () => {
       createdAt: new Date()
     };
 
-    setBusinessName(data.businessName);
-    
-    // Initialize Business Array
-    const newBusiness: Business = {
-      id: `BIZ-${Date.now()}`,
-      name: data.businessName,
-      type: data.businessType,
-      address: 'Main Headquarters',
-      contactEmail: data.adminEmail,
-      isPrimary: true
-    };
-    setBusinesses([newBusiness]);
+    const initialProducts = (data.generatedProducts || []).map(p => ({ ...p, businessId: bizId }));
 
+    // Persist Business first (relational root)
+    await dataService.upsert('businesses', 'businesses', newBusiness);
+    
+    // Persist User and Products
+    await Promise.all([
+      dataService.upsert('users', 'users', adminUser, bizId),
+      dataService.upsertMany('products', 'products', initialProducts)
+    ]);
+
+    setBusinessName(data.businessName);
+    setBusinesses([newBusiness]);
+    setActiveBusinessId(bizId);
     setCategories(data.generatedCategories);
     setUsers([adminUser]);
     setSubscriptionPlan(data.selectedPlan);
-    
-    // Persist Initial Data to IndexedDB
-    await dbService.saveItems('users', [adminUser]);
-    if (data.generatedProducts && data.generatedProducts.length > 0) {
-      setProducts(data.generatedProducts);
-      await dbService.saveItems('products', data.generatedProducts);
-    }
+    setProducts(initialProducts);
     
     if (data.selectedPlan === 'STARTER') {
        const now = new Date().toISOString();
        localStorage.setItem(KEYS.TRIAL_START, now);
        setTrialStartDate(now);
-    } else {
-       localStorage.removeItem(KEYS.TRIAL_START);
-       setTrialStartDate(null);
     }
     
     setIsSetupComplete(true);
@@ -257,23 +325,38 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = useCallback(async (email: string, pass: string) => {
-    const user = users.find(u => u.email === email && u.password === pass);
+    let user = users.find(u => u.email === email && u.password === pass);
+    if (!user) {
+       const result = await dataService.authenticate(email, pass);
+       if (result && result.user) {
+          user = result.user;
+          if (result.business) {
+             const biz = result.business;
+             setBusinesses(prev => {
+                const exists = prev.find(b => b.id === biz.id);
+                return exists ? prev : [biz, ...prev];
+             });
+             if (biz.isPrimary || !activeBusinessId) {
+                setBusinessName(biz.name);
+                setActiveBusinessId(biz.id);
+             }
+          }
+          setUsers(prev => [...prev.filter(u => u.id !== user!.id), user!]);
+          await dbService.saveItems('users', [user]);
+       }
+    }
+
     if (user) {
       const updatedUser = { ...user, lastLogin: new Date() };
-      setUsers(prevUsers => prevUsers.map(u => u.id === user.id ? updatedUser : u));
+      setUsers(prevUsers => prevUsers.map(u => u.id === user!.id ? updatedUser : u));
       setCurrentUser(updatedUser);
+      await dataService.upsert('users', 'users', updatedUser, updatedUser.businessId);
       localStorage.setItem(KEYS.SESSION_USER, user.id);
-      
-      // Auto-redirect Employees to POS/Terminal
-      if (user.role === UserRole.EMPLOYEE) {
-        setCurrentView(ViewState.POS);
-      } else {
-        setCurrentView(ViewState.DASHBOARD);
-      }
+      setCurrentView(user.role === UserRole.EMPLOYEE ? ViewState.POS : ViewState.DASHBOARD);
       return true;
     }
     return false;
-  }, [users]);
+  }, [users, activeBusinessId]);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
@@ -285,47 +368,79 @@ const App: React.FC = () => {
     setBusinesses(prev => {
       const exists = prev.find(b => b.id === business.id);
       let updated;
-      if (exists) {
-        updated = prev.map(b => b.id === business.id ? business : b);
-      } else {
-        updated = [...prev, business];
-      }
-      
-      // If updating the primary or currently active business name, sync it
-      if (business.isPrimary || (exists && businessName === exists.name)) {
-        setBusinessName(business.name);
-      }
-      
+      if (exists) updated = prev.map(b => b.id === business.id ? business : b);
+      else updated = [...prev, business];
+      if (business.isPrimary || (exists && businessName === exists.name)) setBusinessName(business.name);
       return updated;
     });
+    await dataService.upsert('businesses', 'businesses', business);
   };
 
-  const handleTransactionComplete = useCallback((newTransactions: Transaction[]) => {
-    setTransactions(prev => [...newTransactions, ...prev]);
+  const handleSaveUser = async (user: SystemUser) => {
+    const userToSave = { ...user, businessId: activeBusinessId };
+    setUsers(prev => {
+      const exists = prev.find(u => u.id === userToSave.id);
+      return exists ? prev.map(u => u.id === userToSave.id ? userToSave : u) : [...prev, userToSave];
+    });
+    await dataService.upsert('users', 'users', userToSave, activeBusinessId);
+  };
+
+  const handleSwitchBusiness = (id: string) => setActiveBusinessId(id);
+
+  const handleTransactionComplete = useCallback(async (newTransactions: Transaction[]) => {
+    const taggedTransactions = newTransactions.map(t => ({ ...t, businessId: activeBusinessId }));
+    setTransactions(prev => [...taggedTransactions, ...prev]);
+    await dataService.upsertMany('transactions', 'transactions', taggedTransactions);
+
+    const updatedProducts: Product[] = [];
     setProducts(prevProducts => {
       const soldMap = new Map<string, number>();
-      newTransactions.forEach(tx => {
+      taggedTransactions.forEach(tx => {
         const product = prevProducts.find(p => p.id === tx.productId || p.name === tx.product);
-        if (product) {
-          const currentSold = soldMap.get(product.id) || 0;
-          soldMap.set(product.id, currentSold + (tx.quantity || 1));
-        }
+        if (product) soldMap.set(product.id, (soldMap.get(product.id) || 0) + (tx.quantity || 1));
       });
       return prevProducts.map(p => {
         const soldQty = soldMap.get(p.id);
-        if (soldQty) return { ...p, stock: Math.max(0, p.stock - soldQty) };
+        if (soldQty !== undefined) {
+           const updated = { ...p, stock: Math.max(0, p.stock - soldQty) };
+           updatedProducts.push(updated);
+           return updated;
+        }
         return p;
       });
     });
-  }, []);
+    if (updatedProducts.length > 0) await dataService.upsertMany('products', 'products', updatedProducts);
+  }, [activeBusinessId]);
 
-  // --- Trial Logic ---
+  const handleSaveProduct = async (product: Product) => {
+    const productToSave = { ...product, businessId: activeBusinessId };
+    setProducts(prev => {
+        const exists = prev.find(p => p.id === productToSave.id);
+        if (exists) return prev.map(p => p.id === productToSave.id ? productToSave : p);
+        return [productToSave, ...prev];
+    });
+    await dataService.upsert('products', 'products', productToSave, activeBusinessId);
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    setProducts(prev => prev.filter(p => p.id !== product.id));
+    await dataService.delete('products', 'products', product.id);
+  };
+
+  const handleSaveSupplier = async (supplier: Supplier) => {
+     const supplierToSave = { ...supplier, businessId: activeBusinessId };
+     setSuppliers(prev => {
+        const exists = prev.find(s => s.id === supplier.id);
+        if (exists) return prev.map(s => s.id === supplier.id ? supplierToSave : s);
+        return [supplierToSave, ...prev];
+     });
+     await dataService.upsert('suppliers', 'suppliers', supplierToSave, activeBusinessId);
+  };
+
   const isTrialExpired = useMemo(() => {
     if (subscriptionPlan === 'STARTER' && trialStartDate) {
-      const start = new Date(trialStartDate).getTime();
-      const now = new Date().getTime();
-      const fiveDaysInMs = 5 * 24 * 60 * 60 * 1000;
-      return (now - start) > fiveDaysInMs;
+      const diff = new Date().getTime() - new Date(trialStartDate).getTime();
+      return diff > 5 * 24 * 60 * 60 * 1000;
     }
     return false;
   }, [subscriptionPlan, trialStartDate]);
@@ -337,87 +452,37 @@ const App: React.FC = () => {
     setTrialStartDate(null);
   };
 
-  // --- Render Logic ---
-  if (!isSetupComplete) {
-    return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;
-  }
-
-  if (!currentUser) {
-    return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={businessName} />;
-  }
-
-  // Blocking Modal for Expired Trial
-  if (isTrialExpired) {
-    return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-            <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl max-w-lg text-center space-y-6 relative overflow-hidden animate-in zoom-in-95">
-                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-                 <div className="w-24 h-24 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto text-indigo-600 mb-4 shadow-xl shadow-indigo-100">
-                     <Crown size={48} />
-                 </div>
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight">Trial Period Ended</h2>
-                 <p className="text-slate-500 font-medium leading-relaxed">
-                     Your 5-day Starter trial has concluded. To continue accessing your AutoMate™ intelligence node and data, please upgrade to the Professional plan.
-                 </p>
-                 <div className="pt-6">
-                     <button onClick={upgradeToProfessional} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs active:scale-95">
-                         Upgrade to Professional <ArrowRight size={16} />
-                     </button>
-                     <p className="mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2">
-                       <Lock size={12}/> Secure Payment Processing
-                     </p>
-                 </div>
-            </div>
-        </div>
-    );
-  }
-
-  const renderContent = () => {
-    switch (currentView) {
-      case ViewState.DASHBOARD:
-        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
-      case ViewState.INVENTORY:
-        return <Inventory products={products} setProducts={setProducts} categories={categories} suppliers={suppliers} setSuppliers={setSuppliers} transactions={transactions} role={currentUser.role} />;
-      case ViewState.POS:
-        return <POS products={products} onTransactionComplete={handleTransactionComplete} businessDetails={{ name: businessName, address: "Node Main", contact: currentUser.email, footerMessage: "Official Receipt" }} />;
-      case ViewState.REPORTING:
-        return <Reporting transactions={transactions} products={products} />;
-      case ViewState.PROMOTER:
-        return <Promoter />;
-      case ViewState.SUPPORT:
-        return <Support products={products} transactions={transactions} />;
-      case ViewState.SETTINGS:
-        return <Settings 
-          integrations={integrations} 
-          setIntegrations={setIntegrations} 
-          syncLogs={syncLogs} 
-          setSyncLogs={setSyncLogs} 
-          users={users} 
-          setUsers={setUsers}
-          subscriptionPlan={subscriptionPlan}
-          businesses={businesses}
-          onSaveBusiness={handleSaveBusiness}
-        />;
-      default:
-        return <Dashboard transactions={transactions} products={products} businessName={businessName} role={currentUser.role} />;
-    }
-  };
+  if (!isSetupComplete) return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;
+  if (!currentUser) return <Login onLoginSuccess={handleLogin} onBack={() => setIsSetupComplete(false)} businessName={activeBusiness.name} />;
+  if (isTrialExpired) return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-12 rounded-[2.5rem] shadow-2xl max-w-lg text-center space-y-6">
+               <Crown size={48} className="mx-auto text-indigo-600" />
+               <h2 className="text-3xl font-black text-slate-900">Trial Period Ended</h2>
+               <p className="text-slate-500">Your trial has concluded. Upgrade to continue.</p>
+               <button onClick={upgradeToProfessional} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl">Upgrade Now</button>
+          </div>
+      </div>
+  );
 
   return (
     <RoleShell role={currentUser.role}>
       <Layout 
-        currentView={currentView} 
-        setView={setCurrentView} 
-        role={currentUser.role} 
-        businessName={businessName} 
-        onLogout={handleLogout}
-        products={products}
-        transactions={transactions}
-        currentUser={currentUser}
-        users={users}
-        subscriptionPlan={subscriptionPlan}
+        currentView={currentView} setView={setCurrentView} role={currentUser.role} businessName={activeBusiness.name} 
+        onLogout={handleLogout} products={currentProducts} transactions={currentTransactions} currentUser={currentUser} 
+        users={users} subscriptionPlan={subscriptionPlan}
       >
-        {renderContent()}
+        {(() => {
+          switch (currentView) {
+            case ViewState.DASHBOARD: return <Dashboard transactions={currentTransactions} products={currentProducts} businessName={activeBusiness.name} role={currentUser.role} />;
+            case ViewState.INVENTORY: return <Inventory products={currentProducts} setProducts={setProducts} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} categories={categories} suppliers={suppliers} setSuppliers={setSuppliers} onSaveSupplier={handleSaveSupplier} transactions={currentTransactions} role={currentUser.role} />;
+            case ViewState.POS: return <POS products={currentProducts} operatorName={currentUser.name} onTransactionComplete={handleTransactionComplete} businessDetails={{ name: activeBusiness.name, address: activeBusiness.address || 'Main Node', contact: activeBusiness.phone || activeBusiness.contactEmail || currentUser.email, footerMessage: activeBusiness.receiptFooter || "Official Receipt" }} />;
+            case ViewState.REPORTING: return <Reporting transactions={currentTransactions} products={currentProducts} />;
+            case ViewState.PROMOTER: return <Promoter referrals={referrals} />;
+            case ViewState.SUPPORT: return <Support products={currentProducts} transactions={currentTransactions} />;
+            case ViewState.SETTINGS: return <Settings integrations={integrations} setIntegrations={setIntegrations} syncLogs={syncLogs} setSyncLogs={setSyncLogs} users={users} setUsers={setUsers} onSaveUser={handleSaveUser} subscriptionPlan={subscriptionPlan} businesses={businesses} onSaveBusiness={handleSaveBusiness} activeBusinessId={activeBusinessId} onSwitchBusiness={handleSwitchBusiness} />;
+          }
+        })()}
       </Layout>
     </RoleShell>
   );

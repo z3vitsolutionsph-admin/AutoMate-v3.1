@@ -1,15 +1,15 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Users, DollarSign, Award, Target, Calculator, Copy, Check, User, ArrowRight, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { StatCard } from './StatCard';
 import { formatCurrency, PROMOTER_TIERS } from '../constants';
 import { Referral } from '../types';
 
-export const Promoter: React.FC = () => {
-  // State for dynamic data (fetching simulation)
-  const [referrals, setReferrals] = useState<Referral[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface PromoterProps {
+  referrals: Referral[];
+}
+
+export const Promoter: React.FC<PromoterProps> = ({ referrals = [] }) => {
   const [referralLink, setReferralLink] = useState(`https://automate.ph/ref/${Math.random().toString(36).substring(7)}`);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -25,59 +25,16 @@ export const Promoter: React.FC = () => {
   const totalEarnings = baseCommission + recurringIncome + bonus;
 
   // Real Stats from Data
-  const realActiveReferrals = referrals.filter(r => r.status === 'Active').length;
-  const realTotalCommission = referrals.reduce((acc, curr) => acc + curr.commission, 0);
-  const realConversionRate = referrals.length > 0 ? ((realActiveReferrals / referrals.length) * 100).toFixed(1) : '0.0';
-
-  useEffect(() => {
-    // Simulate Fetching Data from Backend
-    const fetchReferrals = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        // Simulate API network delay
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        
-        // Return empty array initially to respect "Remove mock data" request
-        // In a real scenario, this would be: const { data } = await supabase.from('referrals').select('*');
-        setReferrals([]); 
-      } catch (err) {
-        console.error("Failed to load referral nodes:", err);
-        setError("Unable to synchronize referral ledger. Network node unreachable.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchReferrals();
-  }, []);
+  const safeReferrals = Array.isArray(referrals) ? referrals : [];
+  const realActiveReferrals = safeReferrals.filter(r => r.status === 'Active').length;
+  const realTotalCommission = safeReferrals.reduce((acc, curr) => acc + curr.commission, 0);
+  const realConversionRate = safeReferrals.length > 0 ? ((realActiveReferrals / safeReferrals.length) * 100).toFixed(1) : '0.0';
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(referralLink);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
-
-  const retryFetch = () => {
-    window.location.reload(); // Simple retry strategy for now
-  };
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6 animate-in fade-in">
-        <div className="w-20 h-20 bg-rose-50 rounded-[2rem] flex items-center justify-center text-rose-500 shadow-xl border border-rose-100">
-          <AlertCircle size={32} />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Sync Failure</h2>
-          <p className="text-slate-500 max-w-sm mx-auto font-medium">{error}</p>
-        </div>
-        <button onClick={retryFetch} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
-          <RefreshCw size={16} /> Retry Connection
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8 pb-12">
@@ -104,23 +61,20 @@ export const Promoter: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Referrals" 
-          value={isLoading ? '-' : referrals.length.toString()} 
+          value={safeReferrals.length.toString()} 
           icon={<Users size={20} />} 
-          loading={isLoading}
           colorTheme="blue" 
         />
         <StatCard 
           title="Accrued Earnings" 
-          value={isLoading ? '-' : formatCurrency(realTotalCommission)} 
+          value={formatCurrency(realTotalCommission)} 
           icon={<DollarSign size={20} />} 
-          loading={isLoading}
           colorTheme="indigo" 
         />
         <StatCard 
           title="Conversion Rate" 
-          value={isLoading ? '-' : `${realConversionRate}%`} 
+          value={`${realConversionRate}%`} 
           icon={<Target size={20} />} 
-          loading={isLoading}
           colorTheme="emerald" 
         />
         <StatCard 
@@ -190,12 +144,7 @@ export const Promoter: React.FC = () => {
           <button className="text-xs font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors">History Log</button>
         </div>
         
-        {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12">
-            <Loader2 size={32} className="text-indigo-600 animate-spin mb-4" />
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Synchronizing Ledger...</p>
-          </div>
-        ) : referrals.length > 0 ? (
+        {safeReferrals.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -207,7 +156,7 @@ export const Promoter: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-slate-50">
-                {referrals.map((ref) => (
+                {safeReferrals.map((ref) => (
                   <tr key={ref.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="p-6"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400"><User size={20} /></div><span className="font-bold text-slate-900">{ref.clientName}</span></div></td>
                     <td className="p-6 text-slate-500 font-medium">{new Date(ref.dateJoined).toLocaleDateString()}</td>

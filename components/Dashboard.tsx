@@ -16,10 +16,107 @@ interface DashboardProps {
   role: UserRole;
 }
 
+interface JournalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  transactions: Transaction[];
+}
+
+const JournalModal: React.FC<JournalModalProps> = ({ isOpen, onClose, transactions }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  if (!isOpen) return null;
+
+  const filteredTransactions = transactions.filter(t => 
+    t.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (t.category && t.category.toLowerCase().includes(searchTerm.toLowerCase()))
+  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return (
+    <div className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+       <div className="bg-white w-full max-w-4xl h-[85vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-200">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+             <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100 shadow-sm"><FileText size={24} /></div>
+                <div>
+                   <h3 className="text-xl font-black text-slate-900 tracking-tight">Transaction Journal</h3>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Full Ledger History</p>
+                </div>
+             </div>
+             <button onClick={onClose} className="p-2.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-900 transition-colors"><X size={20}/></button>
+          </div>
+          
+          <div className="p-6 border-b border-slate-100 bg-white">
+             <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                <input 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:text-slate-400"
+                  placeholder="Search by ID, Product, or Category..."
+                  autoFocus
+                />
+             </div>
+          </div>
+
+          <div className="flex-1 overflow-auto custom-scrollbar p-0 bg-slate-50/30">
+             <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10 shadow-sm">
+                   <tr>
+                      <th className="p-5 pl-8 border-b border-slate-100">Reference</th>
+                      <th className="p-5 border-b border-slate-100">Timestamp</th>
+                      <th className="p-5 border-b border-slate-100">Details</th>
+                      <th className="p-5 border-b border-slate-100">Method</th>
+                      <th className="p-5 pr-8 text-right border-b border-slate-100">Amount</th>
+                   </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm bg-white">
+                   {filteredTransactions.map(t => (
+                      <tr key={t.id} className="hover:bg-indigo-50/30 transition-colors group">
+                         <td className="p-5 pl-8 font-mono text-xs font-bold text-slate-500 group-hover:text-indigo-600 transition-colors">{t.id}</td>
+                         <td className="p-5 text-slate-600 font-medium">
+                            <div className="flex flex-col">
+                               <span>{new Date(t.date).toLocaleDateString()}</span>
+                               <span className="text-[10px] text-slate-400 font-bold">{new Date(t.date).toLocaleTimeString()}</span>
+                            </div>
+                         </td>
+                         <td className="p-5">
+                            <div className="flex items-center">
+                               <span className="font-bold text-slate-900">{t.product}</span>
+                               {t.quantity && t.quantity > 1 && <span className="ml-2 text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">x{t.quantity}</span>}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{t.category}</span>
+                         </td>
+                         <td className="p-5 text-slate-500 font-medium">
+                            <span className="px-3 py-1 rounded-full bg-slate-50 text-[10px] font-black uppercase tracking-widest border border-slate-200 text-slate-500 group-hover:border-indigo-100 group-hover:text-indigo-500 transition-colors">
+                               {t.paymentMethod || 'Cash'}
+                            </span>
+                         </td>
+                         <td className="p-5 pr-8 text-right font-black text-slate-900">{formatCurrency(t.amount)}</td>
+                      </tr>
+                   ))}
+                   {filteredTransactions.length === 0 && (
+                      <tr><td colSpan={5} className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">No entries found matching query</td></tr>
+                   )}
+                </tbody>
+             </table>
+          </div>
+          
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-center flex justify-between items-center px-8">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Showing {filteredTransactions.length} Records</p>
+             <button onClick={onClose} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-widest">Close Journal</button>
+          </div>
+       </div>
+    </div>
+  );
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ transactions, products, businessName, role }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [showJournal, setShowJournal] = useState(false);
 
   const isEmployee = role === UserRole.EMPLOYEE;
 
@@ -93,7 +190,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products, bu
            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <h3 className="text-lg font-bold text-slate-900">Recent Transactions</h3>
-                <button className="text-xs font-bold text-indigo-600 hover:underline">View Journal</button>
+                <button 
+                  onClick={() => setShowJournal(true)} 
+                  className="text-xs font-bold text-indigo-600 hover:underline hover:text-indigo-700 transition-colors"
+                >
+                  View Journal
+                </button>
              </div>
              <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -140,6 +242,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, products, bu
            </div>
         </div>
       </div>
+
+      {showJournal && (
+        <JournalModal 
+          isOpen={showJournal} 
+          onClose={() => setShowJournal(false)} 
+          transactions={transactions} 
+        />
+      )}
 
       {showAnalysisModal && analysisResult && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
