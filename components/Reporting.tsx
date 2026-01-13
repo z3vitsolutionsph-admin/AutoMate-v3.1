@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { BarChart3, Download, Calendar, TrendingUp, DollarSign, ShoppingBag, PieChart as PieIcon, ArrowUpRight, ArrowDownRight, Filter, Github, Loader2, Package, AlertTriangle, History, ArrowRight, PackageOpen, Layers, X, FileText, FileSpreadsheet, FileJson, Check } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -29,6 +30,34 @@ export const Reporting: React.FC<{ transactions: Transaction[], products: Produc
     }
     return data;
   }, [transactions]);
+
+  const handleExportJournal = () => {
+    if (transactions.length === 0) return;
+    
+    // Construct CSV
+    const headers = ["Reference ID", "Date", "Product", "Category", "Amount", "Status", "Payment Method"];
+    const rows = transactions.map(t => [
+      t.id,
+      t.date,
+      t.product,
+      t.category,
+      t.amount,
+      t.status,
+      t.paymentMethod || "Cash"
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + headers.join(",") + "\n"
+      + rows.map(e => e.join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Automate_Ledger_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -79,7 +108,12 @@ export const Reporting: React.FC<{ transactions: Transaction[], products: Produc
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
-           <div className="flex justify-between items-center mb-8"><h3 className="text-lg font-bold text-slate-900">Recent Transactions</h3><button className="text-xs font-black text-indigo-600 uppercase tracking-widest">Export Journal</button></div>
+           <div className="flex justify-between items-center mb-8">
+             <h3 className="text-lg font-bold text-slate-900">Recent Transactions</h3>
+             <button onClick={handleExportJournal} className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 hover:text-indigo-800 transition-colors">
+               <Download size={14}/> Export Journal
+             </button>
+           </div>
            <div className="space-y-4">
               {transactions.slice(0, 5).map(t => (
                 <div key={t.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-indigo-200 transition-all">

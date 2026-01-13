@@ -1,473 +1,344 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ArrowRight, User, Loader2, Sparkles, Lock, AlertCircle, Rocket, Image as ImageIcon, Briefcase, Building2, ShieldCheck, Terminal, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Check, ArrowRight, User, Loader2, Sparkles, Zap, BrainCircuit, Box, ChevronRight, AlertCircle, RefreshCcw } from 'lucide-react';
 import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
-import { generateBusinessCategories, generateProductImage } from '../services/geminiService';
+import { getBusinessDNA, BusinessDNA } from '../services/geminiService';
 import { Logo } from './Logo';
-import { dbService } from '../services/dbService';
+import { formatCurrency } from '../constants';
 
 const PLANS: SubscriptionPlan[] = [
-  { 
-    id: 'STARTER', 
-    name: 'Starter', 
-    price: 0, 
-    employeeLimit: 1, 
-    features: [
-      '5-Day Free Trial', 
-      'Single Store Node',
-      'Core POS Terminal', 
-      'Basic Inventory Audit', 
-      '1 User Seat', 
-      'Standard Reports'
-    ], 
-    color: 'border-slate-200 hover:border-indigo-300' 
-  },
-  { 
-    id: 'PROFESSIONAL', 
-    name: 'Professional', 
-    price: 4999, 
-    employeeLimit: 5, 
-    features: [
-      'Advanced AI Insights', 
-      '5 User Seats', 
-      'Affiliate & Promoter Hub', 
-      'Multi-Store Support (3)', 
-      'Priority Email Support',
-      'Loyalty Program'
-    ], 
-    recommended: true, 
-    color: 'border-indigo-600 shadow-indigo-100 shadow-xl bg-indigo-50/20' 
-  },
-  { 
-    id: 'ENTERPRISE', 
-    name: 'Enterprise', 
-    price: 9999, 
-    employeeLimit: 'Unlimited', 
-    features: [
-      'Unlimited Nodes Sync', 
-      'Neural Demand Forecasting', 
-      'Dedicated Success Manager', 
-      'Custom API Access', 
-      '24/7 Priority Support',
-      'White-Label Options'
-    ], 
-    color: 'border-blue-600 hover:bg-blue-50/20 shadow-blue-100' 
-  }
+  { id: 'STARTER', name: 'Starter Shop', price: 0, employeeLimit: 1, features: ['5-Day Free Trial', 'Basic Sales', 'Save to Browser'], color: 'border-slate-200 hover:border-indigo-300' },
+  { id: 'PROFESSIONAL', name: 'Professional', price: 4999, employeeLimit: 5, features: ['Assistant Help', '5 Staff Seats', 'Saved Online', 'Shop Health Check'], recommended: true, color: 'border-indigo-600 shadow-indigo-100 shadow-2xl bg-indigo-50/10' },
+  { id: 'ENTERPRISE', name: 'Big Brand', price: 9999, employeeLimit: 'Unlimited', features: ['Custom Setup', 'Multiple Shops', 'Priority Help', 'Expert Advice'], color: 'border-slate-900 shadow-slate-200' }
 ];
-
-const SafeImage: React.FC<{ src?: string, alt: string }> = ({ src, alt }) => {
-  const [error, setError] = useState(false);
-  if (!src || error) return <div className="flex items-center justify-center w-full h-full text-slate-300 bg-slate-50"><ImageIcon size={32} /></div>;
-  return <img src={src} alt={alt} className="w-full h-full object-cover" onError={() => setError(true)} />;
-};
 
 export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void; onSwitchToLogin: () => void }> = ({ onComplete, onSwitchToLogin }) => {
   const [step, setStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState('Initializing Intelligence...');
-  const [showPassword, setShowPassword] = useState(false);
-  
-  // Data State
+  const [loadingStage, setLoadingStage] = useState<string>('');
+  const [isError, setIsError] = useState(false);
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
-  const [categories, setCategories] = useState<string[]>([]);
-  const [generatedProducts, setGeneratedProducts] = useState<Product[]>([]);
+  const [dna, setDna] = useState<BusinessDNA | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('PROFESSIONAL');
-  
-  // Admin State
-  const [adminName, setAdminName] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  
-  // Validation & Error Handling
-  const [errors, setErrors] = useState<{name?: string, email?: string, password?: string, business?: string}>({});
-  const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
-  
+  const [admin, setAdmin] = useState({ name: '', email: '', password: '' });
+  const [logs, setLogs] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (step === 4 && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [deploymentLogs, step]);
+  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
-  const addLog = (msg: string) => setDeploymentLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  const addLog = (msg: string) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  const nextStep = () => {
-    setErrors({});
-    setStep(prev => prev + 1);
-  };
-
-  const handleStep0 = async () => {
+  const handleStart = async () => {
     if (!businessName.trim() || !businessType.trim()) {
-      setErrors({ business: "Please provide both Business Name and Market Segment." });
+      alert("Please tell us your shop's name and what you plan to sell.");
       return;
     }
 
-    setIsLoading(true);
-    setLoadingText('Analyzing Market Vertical...');
+    setIsError(false);
+    setLoadingStage('Analyzing Market...');
     
     try {
-      const cats = await generateBusinessCategories(businessName, businessType);
-      setCategories(cats);
-      
-      setLoadingText('Synthesizing Visual Assets & Inventory...');
-      // Generate initial inventory based on categories
-      const productPromises = cats.slice(0, 3).map(async (cat, index) => {
-        let imageUrl = '';
-        try {
-          imageUrl = await generateProductImage(`High quality commercial product photography of a representative ${cat} item for ${businessType}. Minimalist studio background.`);
-        } catch (e) { 
-          console.warn('Auto-image generation failed, falling back to placeholder.', e); 
-        }
-
-        return {
-          id: `GEN-${Date.now()}-${index}`,
-          name: `${cat} Starter Unit`,
-          sku: `AUTO-${1000 + index}`,
-          category: cat,
-          price: 1000,
-          stock: 10, // Give some initial stock
-          imageUrl: imageUrl,
-          description: `Automatically initialized inventory item for ${cat} category. Ready for sales.`
-        } as Product;
-      });
-
-      const products = await Promise.all(productPromises);
-      setGeneratedProducts(products);
-      nextStep();
-    } catch (error) {
-      console.error("AI Initialization failed", error);
-      // Fallback if AI fails completely
-      setCategories(['General', 'Services', 'Retail']);
-      nextStep();
-    } finally { 
-      setIsLoading(false); 
-    }
-  };
-
-  const validateStep3 = () => {
-    const newErrors: {name?: string, email?: string, password?: string} = {};
-    let isValid = true;
-    
-    if (!adminName.trim() || adminName.length < 3) { 
-      newErrors.name = "Full name required (min 3 chars)."; 
-      isValid = false; 
-    }
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!adminEmail.trim() || !emailRegex.test(adminEmail)) { 
-      newErrors.email = "Valid email address required."; 
-      isValid = false; 
-    }
-    
-    if (!adminPassword.trim() || !/^\d{5,8}$/.test(adminPassword)) { 
-      newErrors.password = "Secure Key must be 5-8 numeric digits."; 
-      isValid = false; 
-    }
-    
-    setErrors(newErrors);
-    return isValid;
-  };
-
-  const handleVerifyDeployment = () => {
-    if (validateStep3()) {
-      nextStep(); // Move to Step 4 (Deployment Terminal)
-      handleFinalize(); // Auto-start deployment
-    }
-  };
-
-  const handleFinalize = async () => {
-    setDeploymentLogs([]);
-    addLog("Initializing deployment sequence...");
-    
-    const resultState = { 
-      businessName, businessType, generatedCategories: categories, generatedProducts, selectedPlan, 
-      paymentMethod: 'GCASH', adminName, adminEmail, adminPassword, isComplete: true 
-    };
-
-    try {
-      // Simulation of system setup (Local Mode)
-      addLog("Initializing Local Neural Node...");
+      // Stage 1: Market Analysis
       await new Promise(r => setTimeout(r, 600));
-      addLog("Local storage structure allocated.");
-
-      addLog(`Provisioning organization: ${businessName}...`);
-      await new Promise(r => setTimeout(r, 500));
-      addLog(`Organization ID: BIZ-${Date.now()} [OK]`);
-
-      addLog(`Creating Master Authority profile for ${adminName}...`);
-      await new Promise(r => setTimeout(r, 600));
-      addLog("Master Authority profile created [OK]");
-
-      addLog(`Migrating ${generatedProducts.length} synthetic assets to ledger...`);
-      // We don't save here, App.tsx handles the actual IndexedDB save to ensure flow control
-      await new Promise(r => setTimeout(r, 800));
-      addLog("Inventory ledger synchronized [OK]");
-
-      addLog("System registry finalized.");
-      addLog("Redirecting to Command Center...");
+      setLoadingStage('Defining Business DNA...');
       
-      setTimeout(() => onComplete(resultState), 1500);
-
-    } catch (error: any) {
-      console.error("Deployment Error:", error);
-      addLog(`ERROR: ${error.message}`);
+      // Stage 2: Gemini API Call
+      const result = await getBusinessDNA(businessName, businessType);
+      
+      setLoadingStage('Crafting Catalog...');
+      await new Promise(r => setTimeout(r, 400));
+      
+      setDna(result);
+      setProducts(result.starterProducts.map((p, i) => ({ 
+        ...p, 
+        id: `NEW-${Date.now()}-${i}`, 
+        stock: 20 
+      } as Product)));
+      
+      setStep(1);
+    } catch (e) { 
+      console.error("Onboarding logic failure:", e);
+      setIsError(true);
+      setLoadingStage('');
     }
   };
 
-  // --- Render Steps ---
+  const finishSetup = async () => {
+    if (!admin.name.trim() || !admin.email.trim()) {
+      alert("Please fill in your name and email.");
+      return;
+    }
+    if (admin.password.length < 4) {
+      alert("Please use a password with at least 4 characters.");
+      return;
+    }
+    
+    setStep(4);
+    addLog("Setting up your shop's digital shelf...");
+    await new Promise(r => setTimeout(r, 600));
+    addLog(`Registering ${businessName} in our secure vault...`);
+    await new Promise(r => setTimeout(r, 800));
+    addLog(`Creating manager access for ${admin.name}...`);
+    await new Promise(r => setTimeout(r, 1000));
+    addLog("Almost ready! Just polishing the counter...");
+    
+    setTimeout(() => onComplete({ 
+      businessName, 
+      businessType, 
+      generatedCategories: dna?.categories || [], 
+      generatedProducts: products, 
+      selectedPlan, 
+      paymentMethod: 'GCASH', 
+      adminName: admin.name, 
+      adminEmail: admin.email, 
+      adminPassword: admin.password, 
+      isComplete: true 
+    }), 1500);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans selection:bg-indigo-100">
-      
-      {/* Step Indicator */}
-      <div className="w-full max-w-4xl mb-12">
-        <div className="flex justify-between items-center px-4 max-w-2xl mx-auto">
-          {['Identity', 'Assets', 'Scale', 'Authority', 'Deploy'].map((label, i) => (
-            <div key={i} className={`flex items-center ${i < 4 ? 'flex-1' : ''}`}>
-               <div className="relative flex flex-col items-center">
-                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all duration-500 z-10 ${step >= i ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-110' : 'bg-white border border-slate-200 text-slate-300'}`}>
-                   {step > i ? <Check size={18} strokeWidth={3} /> : i + 1}
-                 </div>
-                 <span className={`absolute -bottom-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors duration-300 ${step >= i ? 'text-indigo-600' : 'text-slate-300'}`}>{label}</span>
-               </div>
-               {i < 4 && <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-700 ${step > i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="w-full max-w-4xl bg-white border border-slate-200 p-8 md:p-16 rounded-[3rem] shadow-2xl relative overflow-hidden transition-all min-h-[600px] flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4 md:p-10 font-sans selection:bg-indigo-100 overflow-x-hidden">
+      <div className="w-full max-w-6xl flex flex-col items-center flex-1">
+        <Logo className="h-12 mb-10" showText />
         
-        {/* STEP 0: Business Identity */}
-        {step === 0 && (
-          <div className="flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-8 duration-500">
-            <div className="text-center space-y-6 mb-12">
-              <Logo className="h-20 mb-4 mx-auto justify-center" />
-              <div className="space-y-2">
-                <h2 className="text-4xl font-black text-slate-900 tracking-tight">AutoMate™ Setup</h2>
-                <p className="text-slate-500 font-medium max-w-md mx-auto">Initialize your intelligent commerce node. Define your market parameters to begin.</p>
-              </div>
-            </div>
-            
-            <div className="space-y-6 max-w-lg mx-auto w-full">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Organization Name</label>
-                <div className="relative group">
-                   <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
-                   <input 
-                     value={businessName} 
-                     onChange={e => { setBusinessName(e.target.value); setErrors({}); }}
-                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:font-medium placeholder:text-slate-300" 
-                     placeholder="e.g. Apex Retail Global" 
-                   />
+        <div className="w-full max-w-5xl bg-white border border-slate-200 rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col min-h-[560px] transition-all duration-500">
+          
+          {step === 0 && (
+            <div className="p-8 md:p-16 flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="max-w-2xl mx-auto text-center md:text-left space-y-8">
+                <div className="space-y-4">
+                  <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter leading-none">
+                    Start Your <span className="text-indigo-600">Dream Shop.</span>
+                  </h1>
+                  <p className="text-slate-500 text-lg md:text-xl font-medium leading-relaxed max-w-xl">
+                    AutoMate uses intelligence to build your inventory catalog and business strategy in seconds.
+                  </p>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Market Segment</label>
-                <div className="relative group">
-                   <Briefcase className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
-                   <input 
-                     value={businessType} 
-                     onChange={e => { setBusinessType(e.target.value); setErrors({}); }}
-                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all placeholder:font-medium placeholder:text-slate-300" 
-                     placeholder="e.g. Fashion & Apparel" 
-                   />
-                </div>
-              </div>
-
-              {errors.business && (
-                <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2">
-                  <AlertCircle size={16} /> {errors.business}
-                </div>
-              )}
-
-              <button onClick={handleStep0} disabled={isLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 disabled:opacity-70 disabled:active:scale-100 mt-4">
-                {isLoading ? <><Loader2 className="animate-spin" size={20} /> <span className="text-xs uppercase tracking-widest">{loadingText}</span></> : <>Initialize Intelligence <ArrowRight size={20} /></>}
-              </button>
-
-              <div className="text-center pt-4">
-                 <button onClick={onSwitchToLogin} className="text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors flex items-center justify-center gap-2 mx-auto">
-                    <Lock size={12} /> Access Existing Node
-                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 1: Assets Synthesized */}
-        {step === 1 && (
-           <div className="flex-1 flex flex-col justify-center items-center space-y-12 animate-in fade-in">
-             <div className="text-center space-y-4">
-               <div className="w-20 h-20 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto text-indigo-600 shadow-inner"><Sparkles size={40} /></div>
-               <h2 className="text-3xl font-black text-slate-900">Assets Synthesized</h2>
-               <p className="text-slate-500 max-w-md mx-auto">AI has generated preliminary inventory based on your market segment.</p>
-             </div>
-             
-             <div className="grid grid-cols-3 gap-6 w-full max-w-2xl">
-                {generatedProducts.slice(0, 3).map((p, i) => (
-                  <div key={i} className="group relative">
-                    <div className="aspect-square bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden shadow-sm group-hover:shadow-md transition-all">
-                      <SafeImage src={p.imageUrl} alt={p.name} />
-                    </div>
-                    <p className="text-center mt-3 text-xs font-black uppercase text-slate-700 tracking-wider truncate px-2">{p.category}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="text-left space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-3 tracking-widest">Shop Name</label>
+                    <input 
+                      value={businessName} 
+                      onChange={e => setBusinessName(e.target.value)} 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 font-bold outline-none focus:border-indigo-400 focus:bg-white transition-all placeholder:text-slate-300 shadow-sm" 
+                      placeholder="e.g. Maria's Corner Shop" 
+                    />
                   </div>
-                ))}
-             </div>
+                  <div className="text-left space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-3 tracking-widest">What do you sell?</label>
+                    <input 
+                      value={businessType} 
+                      onChange={e => setBusinessType(e.target.value)} 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 font-bold outline-none focus:border-indigo-400 focus:bg-white transition-all placeholder:text-slate-300 shadow-sm" 
+                      placeholder="e.g. Snacks & Drinks" 
+                    />
+                  </div>
+                </div>
 
-             <button onClick={nextStep} className="w-full max-w-md bg-indigo-600 text-white font-black py-6 rounded-3xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95">
-               Confirm & Continue <Check size={20} />
-             </button>
-           </div>
-        )}
+                {isError && (
+                  <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 animate-in slide-in-from-top-2">
+                    <AlertCircle size={20} />
+                    <p className="text-xs font-bold">Something went wrong. Please check your internet node and try again.</p>
+                  </div>
+                )}
 
-        {/* STEP 2: Subscription Plan */}
-        {step === 2 && (
-           <div className="flex-1 flex flex-col animate-in fade-in">
-             <div className="text-center space-y-2 mb-10">
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight">Subscription Plan</h2>
-                <p className="text-slate-500 text-sm font-medium">Choose the architecture that fits your business scale.</p>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="flex flex-col sm:flex-row items-center gap-6 pt-4">
+                  <button 
+                    onClick={handleStart} 
+                    disabled={!!loadingStage} 
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 px-12 rounded-2xl shadow-2xl shadow-indigo-200 transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-80"
+                  >
+                    {loadingStage ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} />
+                        <span className="uppercase tracking-widest text-xs font-black">{loadingStage}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="uppercase tracking-widest text-xs font-black">Start My Shop</span>
+                        <Sparkles size={18}/>
+                      </>
+                    )}
+                  </button>
+                  <button onClick={onSwitchToLogin} className="text-slate-400 font-bold text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors p-2 flex items-center gap-2">
+                    Already have an account? <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="p-8 md:p-12 flex-1 flex flex-col animate-in slide-in-from-right-8 duration-500 overflow-y-auto">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+                <div className="flex items-center gap-4">
+                  <div className="p-3.5 bg-indigo-600 rounded-2xl text-white shadow-xl"><BrainCircuit size={28} /></div>
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Your AI Blueprint</h2>
+                    <p className="text-[10px] text-indigo-500 font-black uppercase tracking-widest">Tailored market strategy</p>
+                  </div>
+                </div>
+                <button onClick={() => setStep(2)} className="w-full md:w-auto bg-slate-900 hover:bg-indigo-600 text-white font-black py-4 px-10 rounded-xl shadow-xl transition-all flex items-center justify-center gap-3 text-[10px] uppercase active:scale-95 tracking-widest">
+                  Configure My Plan <ChevronRight size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+                <div className="lg:col-span-4 bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-inner space-y-6">
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-indigo-600 mb-2 tracking-widest flex items-center gap-2"><Zap size={10} fill="currentColor"/> Strategic Insight</p>
+                    <p className="text-base font-bold text-slate-800 italic leading-relaxed">"{dna?.nicheAnalysis}"</p>
+                  </div>
+                  <div className="pt-6 border-t border-slate-200/60">
+                    <p className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">Growth Recommendation</p>
+                    <p className="text-xs font-medium text-slate-600 leading-relaxed">{dna?.growthStrategy}</p>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-8 bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden flex flex-col shadow-sm">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Generated Starter Catalog</h3>
+                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">{products.length} Items</span>
+                  </div>
+                  <div className="flex-1 p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {products.map((p, i) => (
+                      <div key={i} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col gap-3 group transition-all hover:border-indigo-300 hover:bg-white hover:shadow-lg">
+                        <div className="aspect-square bg-white rounded-xl flex items-center justify-center text-slate-200 border border-slate-100 shadow-inner group-hover:text-indigo-400 transition-colors">
+                          <Box size={24} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-900 truncate uppercase tracking-tight">{p.name}</p>
+                          <div className="flex justify-between items-center mt-1">
+                            <p className="text-[9px] font-bold text-indigo-600">{formatCurrency(p.price)}</p>
+                            <span className="text-[8px] font-black text-slate-400 uppercase">{p.category}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="p-8 md:p-14 flex-1 flex flex-col animate-in slide-in-from-right-8 duration-500 overflow-y-auto">
+              <div className="text-center mb-12 space-y-2">
+                <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Choose Your Tier</h2>
+                <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Scalable architecture for any business size</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 {PLANS.map(p => (
                   <div 
                     key={p.id} 
                     onClick={() => setSelectedPlan(p.id)} 
-                    className={`relative p-6 border-2 rounded-[2.5rem] cursor-pointer transition-all duration-300 flex flex-col gap-4 group ${selectedPlan === p.id ? p.color + ' scale-105 z-10 bg-white ring-4 ring-indigo-50' : 'border-slate-100 hover:border-slate-200 bg-white hover:shadow-lg opacity-80 hover:opacity-100 scale-95'}`}
+                    className={`p-10 border-2 rounded-[3rem] cursor-pointer transition-all duration-500 flex flex-col relative group ${selectedPlan === p.id ? 'border-indigo-600 scale-[1.02] z-10 bg-white ring-[12px] ring-indigo-50 shadow-2xl shadow-indigo-100' : 'border-slate-100 bg-slate-50 opacity-60 hover:opacity-100'}`}
                   >
                     {p.recommended && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">
-                        Recommended
-                      </div>
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-5 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] shadow-xl">Most Popular</div>
                     )}
-                    <div className="text-center pb-4 border-b border-slate-100">
-                      <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs mb-2">{p.name}</h4>
-                      <p className="text-3xl font-black text-slate-900 tracking-tighter">₱{p.price.toLocaleString()}<span className="text-sm text-slate-400 font-bold ml-1">/mo</span></p>
+                    <div className="text-center border-b border-slate-100 pb-8 mb-8">
+                      <h4 className="font-black text-slate-900 uppercase text-xs mb-4 tracking-widest">{p.name}</h4>
+                      <p className="text-4xl font-black text-slate-900 tracking-tighter">₱{p.price.toLocaleString()}<span className="text-xs text-slate-400 font-bold ml-1 tracking-normal">/mo</span></p>
                     </div>
-                    <ul className="space-y-3 flex-1">
-                      {p.features.map((feat, i) => (
-                        <li key={i} className="flex items-start gap-3 text-[10px] font-bold text-slate-600">
-                          <Check size={14} className={`shrink-0 mt-0.5 ${selectedPlan === p.id ? 'text-indigo-600' : 'text-slate-300'}`} />
-                          <span className="leading-snug">{feat}</span>
+                    <ul className="space-y-4 flex-1 mb-10">
+                      {p.features.map((f, i) => (
+                        <li key={i} className="flex items-start gap-3 text-[11px] font-bold text-slate-600 leading-tight">
+                          <div className="mt-0.5 p-0.5 bg-indigo-500 rounded text-white shadow-sm"><Check size={10} strokeWidth={4}/></div>
+                          {f}
                         </li>
                       ))}
                     </ul>
-                    <div className={`mt-auto pt-4 text-center text-[10px] font-black uppercase tracking-widest ${selectedPlan === p.id ? 'text-indigo-600' : 'text-slate-300'}`}>
-                      {selectedPlan === p.id ? 'Selected' : 'Select Plan'}
+                    <div className={`text-center py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] transition-all ${selectedPlan === p.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-slate-200 text-slate-400'}`}>
+                      {selectedPlan === p.id ? 'Active Selection' : 'Select Tier'}
                     </div>
                   </div>
                 ))}
-             </div>
-             <button onClick={nextStep} className="w-full max-w-md mx-auto bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-3xl transition-all shadow-xl shadow-indigo-100 active:scale-95 flex items-center justify-center gap-2">
-               Continue <ArrowRight size={20} />
-             </button>
-           </div>
-        )}
-
-        {/* STEP 3: Admin Setup */}
-        {step === 3 && (
-            <div className="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full animate-in fade-in space-y-8">
-               <div className="text-center space-y-2">
-                 <div className="w-16 h-16 bg-slate-900 rounded-[2rem] flex items-center justify-center mx-auto text-white shadow-xl mb-4"><ShieldCheck size={32} /></div>
-                 <h2 className="text-3xl font-black text-slate-900">Master Authority</h2>
-                 <p className="text-slate-500 text-sm">Create the root administrator credentials for your organization.</p>
-               </div>
-
-               <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Administrator Name</label>
-                    <div className="relative">
-                      <User size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
-                      <input 
-                        value={adminName} 
-                        onChange={e => { setAdminName(e.target.value); setErrors({...errors, name: undefined}); }} 
-                        className={`w-full bg-slate-50 border ${errors.name ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
-                        placeholder="John Doe" 
-                      />
-                    </div>
-                    {errors.name && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.name}</p>}
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Secure Email</label>
-                    <div className="relative">
-                      <Briefcase size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
-                      <input 
-                        value={adminEmail} 
-                        onChange={e => { setAdminEmail(e.target.value); setErrors({...errors, email: undefined}); }} 
-                        className={`w-full bg-slate-50 border ${errors.email ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-5 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
-                        placeholder="admin@company.com" 
-                      />
-                    </div>
-                    {errors.email && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.email}</p>}
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Access Key</label>
-                    <div className="relative">
-                      <Lock size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"/>
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        value={adminPassword} 
-                        onChange={e => { setAdminPassword(e.target.value); setErrors({...errors, password: undefined}); }} 
-                        className={`w-full bg-slate-50 border ${errors.password ? 'border-rose-300 bg-rose-50' : 'border-slate-200'} rounded-2xl pl-14 pr-12 py-5 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-indigo-50 transition-all`} 
-                        placeholder="5-8 Digits" 
-                        maxLength={8} 
-                      />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                    {errors.password && <p className="text-rose-500 text-[10px] font-bold ml-2">{errors.password}</p>}
-                  </div>
-               </div>
-               
-               <button onClick={handleVerifyDeployment} className="w-full bg-indigo-600 text-white font-black py-6 rounded-3xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Verify & Deploy</button>
+              </div>
+              <div className="flex flex-col items-center gap-4">
+                <button onClick={() => setStep(3)} className="w-full sm:w-80 bg-slate-900 hover:bg-indigo-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-slate-200 transition-all active:scale-95 text-xs uppercase tracking-[0.3em]">
+                  Finalize Access
+                </button>
+                <button onClick={() => setStep(1)} className="text-[10px] font-black uppercase text-slate-400 tracking-widest hover:text-indigo-600">Back to Blueprint</button>
+              </div>
             </div>
-        )}
+          )}
 
-        {/* STEP 4: System Provisioning (Terminal) */}
-        {step === 4 && (
-          <div className="flex-1 flex flex-col justify-center animate-in zoom-in-95 duration-500 w-full max-w-2xl mx-auto">
-            {deploymentLogs.length > 0 && deploymentLogs[deploymentLogs.length - 1].includes("Redirecting") ? (
-              <div className="text-center space-y-8">
-                <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center mx-auto text-emerald-500 border-4 border-emerald-100 animate-bounce"><Check size={56} strokeWidth={4} /></div>
-                <div>
-                   <h2 className="text-4xl font-black text-slate-900 mb-2">Systems Ready</h2>
-                   <p className="text-slate-500 font-medium">Redirecting you to the command center...</p>
+          {step === 3 && (
+            <div className="p-8 md:p-20 flex-1 flex flex-col justify-center max-w-3xl mx-auto w-full animate-in zoom-in-95 duration-500">
+               <div className="text-center space-y-6 mb-12">
+                  <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto text-white shadow-2xl ring-[10px] ring-indigo-50"><User size={40}/></div>
+                  <div className="space-y-2">
+                    <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Manager Node</h2>
+                    <p className="text-slate-500 text-lg font-medium px-10">Provision your administrative credentials to control {businessName}.</p>
+                  </div>
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Full Name</label>
+                    <input 
+                      value={admin.name} 
+                      onChange={e => setAdmin({...admin, name: e.target.value})} 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 text-sm font-bold outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-sm" 
+                      placeholder="Maria Dela Cruz" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Email Address</label>
+                    <input 
+                      value={admin.email} 
+                      onChange={e => setAdmin({...admin, email: e.target.value})} 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 text-sm font-bold outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-sm" 
+                      placeholder="maria@email.com" 
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Secure Access Key</label>
+                    <input 
+                      type="password" 
+                      value={admin.password} 
+                      onChange={e => setAdmin({...admin, password: e.target.value})} 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 text-sm font-bold outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-sm tracking-widest" 
+                      placeholder="••••••••" 
+                    />
+                  </div>
+               </div>
+               <button onClick={finishSetup} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-2xl shadow-2xl shadow-indigo-100 transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-4 active:scale-95">
+                 Initialize Terminal <Zap size={20} fill="currentColor" className="text-amber-300"/>
+               </button>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="p-8 md:p-14 flex-1 flex flex-col justify-center items-center animate-in zoom-in-95 w-full max-w-3xl mx-auto">
+              <div className="bg-slate-900 rounded-[3rem] p-10 shadow-3xl border border-slate-800 font-mono text-[11px] h-[360px] w-full flex flex-col overflow-hidden relative">
+                <div className="flex-1 overflow-y-auto space-y-2.5 text-indigo-300/90 custom-scrollbar pr-4">
+                  {logs.map((log, i) => (
+                    <div key={i} className={`flex items-start gap-4 ${log.includes("ready") ? "text-emerald-400 font-black" : ""}`}>
+                      <span className="opacity-40 text-[8px] mt-0.5">[{i}]</span>
+                      <span className="flex-1 leading-relaxed">{log}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 animate-pulse text-indigo-500 font-black">
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>> SYNC_STATE: FINALIZING_NODE_ASSETS...</span>
+                  </div>
+                </div>
+                <div className="absolute bottom-6 right-10 flex items-center gap-4">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                  <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.5em]">Neural Ledger v3.5 Bootloader</span>
                 </div>
               </div>
-            ) : (
-              <div className="bg-slate-900 rounded-[2rem] p-6 shadow-2xl border border-slate-800 font-mono text-sm relative overflow-hidden h-[400px] flex flex-col">
-                <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-4">
-                   <div className="flex gap-2">
-                     <div className="w-3 h-3 rounded-full bg-rose-500"></div>
-                     <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                     <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                   </div>
-                   <div className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2"><Terminal size={14}/> AutoMate System CL</div>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto space-y-2 text-xs custom-scrollbar pr-2">
-                   {deploymentLogs.map((log, i) => (
-                     <div key={i} className={`font-mono ${log.includes("ERROR") ? "text-rose-400" : log.includes("WARNING") ? "text-amber-400" : log.includes("[OK]") ? "text-emerald-400" : "text-slate-300"}`}>
-                       <span className="opacity-50 mr-2">{'>'}</span>{log}
-                     </div>
-                   ))}
-                   <div ref={logsEndRef} />
-                </div>
-              </div>
-            )}
-            
-            {!deploymentLogs[deploymentLogs.length - 1]?.includes("Redirecting") && (
-               <p className="text-center mt-6 text-[10px] font-black uppercase tracking-widest text-slate-400 animate-pulse">
-                 Provisioning Local Node Infrastructure...
-               </p>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Footer Branding */}
+      <div className="mt-12 text-center opacity-30">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.8em]">End-to-End Intelligence</p>
       </div>
     </div>
   );

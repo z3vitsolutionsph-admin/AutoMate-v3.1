@@ -1,122 +1,189 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Bot, User, HelpCircle, Mail, Phone, Info } from 'lucide-react';
+import { 
+  Send, Bot, User, BrainCircuit, Activity, Database, RefreshCw, Zap, Target, ShieldCheck 
+} from 'lucide-react';
 import { ChatMessage, Product, Transaction } from '../types';
 import { getSupportResponse } from '../services/geminiService';
 import { formatCurrency } from '../constants';
 
-// Safely access window for AI Studio helpers
 const aistudio = (window as any).aistudio;
 
-interface SupportProps {
-  products: Product[];
-  transactions: Transaction[];
+interface ExtendedChatMessage extends ChatMessage {
+  status?: 'sending' | 'success' | 'error';
 }
 
-export const Support: React.FC<SupportProps> = ({ products, transactions }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: '1', role: 'model', text: 'Hello! I am AutoMateSystem AI, your business buddy. How can I help you today?', timestamp: new Date() }
+export const Support: React.FC<{ products: Product[], transactions: Transaction[] }> = ({ products, transactions }) => {
+  const [messages, setMessages] = useState<ExtendedChatMessage[]>([
+    { 
+      id: '1', 
+      role: 'model', 
+      text: 'Hello! I am your Shop Assistant. I have reviewed your store records. How can I help you improve your business today?', 
+      timestamp: new Date(),
+      status: 'success'
+    }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const storeContext = useMemo(() => {
-    const totalStockValue = products.reduce((s, p) => s + (p.price * p.stock), 0);
-    const lowStock = products.filter(p => p.stock < 10).map(p => `${p.name} (${p.stock})`).join(', ');
-    const topSales = transactions.slice(0, 5).map(t => `${t.product} [${formatCurrency(t.amount)}]`).join(', ');
-    return `Inventory Value: ${formatCurrency(totalStockValue)}. Low Stock: ${lowStock || 'None'}. Sales: ${topSales || 'None'}.`.trim();
+  const shopSnapshot = useMemo(() => {
+    const totalValue = products.reduce((s, p) => s + (p.price * p.stock), 0);
+    const lowStockCount = products.filter(p => p.stock < 10).length;
+    const salesTotal = transactions.slice(0, 10).reduce((s, t) => s + t.amount, 0);
+    return {
+      totalValue, lowStockCount, salesTotal,
+      text: `Shop has ${products.length} items. Total value: ${formatCurrency(totalValue)}. Low stock: ${lowStockCount} items. Recent sales: ${formatCurrency(salesTotal)}.`
+    };
   }, [products, transactions]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isTyping]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
+  const handleSend = async (e?: React.FormEvent, customText?: string) => {
+    if (e) e.preventDefault();
+    const text = customText || input;
+    if (!text.trim()) return;
+
+    if (!customText) {
+      const userMsg: ExtendedChatMessage = { 
+        id: Date.now().toString(), 
+        role: 'user', 
+        text, 
+        timestamp: new Date(), 
+        status: 'success' 
+      };
+      setMessages(prev => [...prev, userMsg]);
+      setInput('');
+    }
+
     setIsTyping(true);
     try {
-      // Key Check
       if (aistudio) {
         const hasKey = await aistudio.hasSelectedApiKey();
-        if (!hasKey) await aistudio.openSelectKey();
+        if (!hasKey) {
+          await aistudio.openSelectKey();
+          // After selection, proceed if they didn't cancel
+        }
       }
 
-      const replyText = await getSupportResponse(userMsg.text, storeContext);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: replyText, timestamp: new Date() }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily delayed. Please verify API Key.", timestamp: new Date() }]);
-    } finally { setIsTyping(false); }
+      const reply = await getSupportResponse(text, shopSnapshot.text);
+      setMessages(prev => [...prev, { 
+        id: (Date.now()+1).toString(), 
+        role: 'model', 
+        text: reply, 
+        timestamp: new Date(), 
+        status: 'success' 
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { 
+        id: (Date.now()+1).toString(), 
+        role: 'model', 
+        text: "Sorry, I'm having trouble connecting to your shop data. This usually happens if the internet is weak. Would you like to try again?", 
+        timestamp: new Date(), 
+        status: 'error' 
+      }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
+  const handleRetry = () => {
+    // Find the last user message to retry
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (lastUserMsg) {
+      handleSend(undefined, lastUserMsg.text);
+    }
+  };
+
+  const Suggestion = ({ label, prompt, icon: Icon }: any) => (
+    <button onClick={() => handleSend(undefined, prompt)} className="flex items-center gap-3 p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-500 hover:shadow-md transition-all text-left group">
+      <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Icon size={18} /></div>
+      <span className="text-xs font-bold text-slate-700">{label}</span>
+    </button>
+  );
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-8rem)]">
-      <div className="lg:col-span-1 space-y-6">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Support Node</h2>
-          <p className="text-slate-500 text-sm mt-1 uppercase font-bold tracking-widest">Operational Assistance</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-3xl p-8 space-y-6 shadow-sm">
-          <h3 className="font-bold text-slate-900 flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><HelpCircle size={20} /></div>
-            Corporate Bridge
-          </h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <Mail size={18} className="text-slate-400" />
-              <span className="text-sm font-bold text-slate-700">support@automate.ph</span>
-            </div>
-            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <Phone size={18} className="text-slate-400" />
-              <span className="text-sm font-bold text-slate-700">+63 917 123 4567</span>
-            </div>
-            <div className="bg-indigo-600 p-6 rounded-[2rem] text-white shadow-lg shadow-indigo-100">
-              <h4 className="font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">Knowledge Base</h4>
-              <ul className="space-y-3 text-xs font-medium opacity-90">
-                {['Registry Restoration', 'Commission Periods', 'POS Hardware Sync'].map(item => (
-                   <li key={item} className="flex items-center gap-2 hover:translate-x-1 transition-transform cursor-pointer opacity-80 hover:opacity-100">• {item}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
+    <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8 h-[calc(100vh-8rem)] animate-in fade-in duration-500">
+      <div className="lg:col-span-4 flex flex-col gap-6 overflow-y-auto no-scrollbar">
+        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Shop Assistant</h2>
+        <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 space-y-8 shadow-sm">
+           <div className="flex items-center gap-3"><Activity size={24} className="text-indigo-600"/><h3 className="font-black text-sm uppercase tracking-widest">Shop Snapshot</h3></div>
+           <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-1">Stock Value</p><p className="text-sm font-black text-slate-900">{formatCurrency(shopSnapshot.totalValue)}</p></div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-1">Low Stock</p><p className="text-sm font-black text-rose-600">{shopSnapshot.lowStockCount} Items</p></div>
+           </div>
+           <div className="space-y-3">
+              <p className="text-[9px] font-black text-slate-400 uppercase ml-1">Common Questions:</p>
+              <div className="grid gap-2.5">
+                 <Suggestion label="Check Inventory" prompt="Check my current stock. What should I reorder soon?" icon={Database} />
+                 <Suggestion label="Sales Strategy" prompt="Look at my recent sales. How can I sell more items?" icon={Zap} />
+                 <Suggestion label="Risk Review" prompt="Are there any issues I should be aware of in my shop right now?" icon={Target} />
+              </div>
+           </div>
         </div>
       </div>
 
-      <div className="lg:col-span-2 bg-white border border-slate-200 rounded-[2.5rem] shadow-xl flex flex-col overflow-hidden">
-        <div className="p-6 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
+      <div className="lg:col-span-8 bg-white border border-slate-200 rounded-[3rem] shadow-xl flex flex-col overflow-hidden relative border-b-8 border-b-indigo-600">
+        <div className="p-6 md:p-8 bg-slate-50/80 backdrop-blur-md border-b border-slate-200 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-200"><Bot size={24} /></div>
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm uppercase tracking-widest">Business Buddy</h3>
-              <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest mt-0.5">Neural Layer Active</p>
+            <div className="relative">
+              <div className="p-3.5 bg-indigo-600 rounded-2xl text-white shadow-lg"><Bot size={28} /></div>
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-pulse"></div>
             </div>
+            <div><h3 className="text-lg font-black text-slate-900 leading-none">Your Assistant</h3><p className="text-[9px] text-indigo-500 font-black uppercase mt-1.5">Online & Ready</p></div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-slate-50/20">
+
+        <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar bg-slate-50/20">
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
               <div className={`flex max-w-[85%] gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-400'}`}>
-                  {msg.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${msg.role === 'user' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-indigo-600'}`}>
+                  {msg.role === 'user' ? <User size={20} /> : <BrainCircuit size={20} />}
                 </div>
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none font-medium' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
+                <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-sm transition-all ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : msg.status === 'error' ? 'bg-rose-50 text-rose-700 rounded-tl-none border border-rose-100' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
                   {msg.text}
-                  <div className={`text-[8px] mt-2 font-bold uppercase tracking-widest opacity-40 ${msg.role === 'user' ? 'text-white' : 'text-slate-400'}`}>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  {msg.status === 'error' && (
+                    <button onClick={handleRetry} className="mt-4 flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-[9px] font-black uppercase transition-all active:scale-95">
+                      <RefreshCw size={12}/> Try Again
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           ))}
-          {isTyping && <div className="flex gap-1.5 p-4 bg-slate-100 rounded-2xl w-fit ml-14"><div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></div><div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]"></div></div>}
+          {isTyping && (
+            <div className="flex gap-4 animate-pulse">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-indigo-400">
+                <BrainCircuit size={20} />
+              </div>
+              <div className="bg-slate-100 p-5 rounded-2xl text-slate-400 text-xs font-bold uppercase tracking-widest">Assistant is thinking...</div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={handleSend} className="p-6 bg-white border-t border-slate-100 flex gap-4">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Query intelligence node..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500/10 font-medium" />
-          <button type="submit" disabled={!input.trim() || isTyping} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 text-white p-4 rounded-xl transition-all shadow-lg active:scale-95"><Send size={22} /></button>
-        </form>
+
+        <div className="p-6 md:p-8 bg-white border-t border-slate-100">
+          <form onSubmit={handleSend} className="relative group">
+            <input 
+              value={input} 
+              onChange={e => setInput(e.target.value)} 
+              disabled={isTyping} 
+              className="w-full bg-slate-50 border border-slate-200 rounded-[2rem] pl-8 pr-20 py-6 text-sm font-bold text-slate-900 outline-none focus:ring-8 focus:ring-indigo-50 transition-all placeholder:text-slate-300 disabled:opacity-50" 
+              placeholder="Ask your assistant anything..." 
+            />
+            <button 
+              type="submit" 
+              disabled={!input.trim() || isTyping} 
+              className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 text-white p-4 rounded-full transition-all shadow-xl active:scale-90"
+            >
+              <Send size={24} />
+            </button>
+          </form>
+          <div className="mt-4 flex justify-center"><p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.4em] flex items-center gap-2"><ShieldCheck size={10}/> Private Assistance Enabled</p></div>
+        </div>
       </div>
     </div>
   );

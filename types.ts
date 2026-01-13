@@ -31,10 +31,10 @@ export interface Business {
 
 export interface SystemUser {
   id: string;
-  businessId?: string; // Linked to Supabase business table
+  businessId?: string;
   name: string;
   email: string;
-  password?: string; // Stored for session validation
+  password?: string;
   role: UserRole;
   status: 'Active' | 'Inactive';
   lastLogin?: Date;
@@ -44,7 +44,7 @@ export interface SystemUser {
 
 export interface Product {
   id: string;
-  businessId?: string; // Linked to Supabase business table
+  businessId?: string;
   name: string;
   sku: string;
   category: string;
@@ -70,10 +70,10 @@ export interface CartItem extends Product {
 
 export interface Transaction {
   id: string;
-  businessId?: string; // Linked to Supabase business table
-  date: string; // Format: YYYY-MM-DD
+  businessId?: string;
+  date: string;
   productId?: string;
-  product: string; // Name
+  product: string;
   category: string;
   location: string;
   amount: number;
@@ -87,24 +87,6 @@ export interface HeldOrder {
   items: CartItem[];
   timestamp: Date;
   customerName?: string;
-}
-
-export interface ReceiptData {
-  transactionId: string;
-  items: CartItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  paymentMethod: string;
-  date: string;
-}
-
-export interface ReorderSuggestion {
-  productName: string;
-  currentStock: number;
-  suggestedReorder: number;
-  reason: string;
-  priority: 'High' | 'Medium' | 'Low';
 }
 
 export interface PromoterTier {
@@ -130,14 +112,13 @@ export interface Referral {
   commission: number;
 }
 
-// Onboarding Types
 export type PlanType = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
 export interface OnboardingState {
   businessName: string;
   businessType: string;
   generatedCategories: string[];
-  generatedProducts?: Product[]; // Added to support auto-stocking
+  generatedProducts?: Product[];
   selectedPlan: PlanType;
   paymentMethod: string;
   adminName: string;
@@ -156,7 +137,6 @@ export interface SubscriptionPlan {
   color: string;
 }
 
-// Accounting & Integration Types
 export interface IntegrationConfig {
   id: string;
   provider: 'XERO' | 'QUICKBOOKS' | 'GITHUB' | 'FACEBOOK' | 'INSTAGRAM' | 'TIKTOK';

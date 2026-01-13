@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -73,18 +74,18 @@
 
       @keyframes pulse-subtle {
         0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.05); opacity: 0.95; }
+        50% { transform: scale(1.02); opacity: 0.8; }
       }
       .animate-pulse-subtle {
-        animation: pulse-subtle 2s ease-in-out infinite;
+        animation: pulse-subtle 3s ease-in-out infinite;
       }
 
       @keyframes pulse-reticle {
         0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.6; transform: scale(1.02); }
+        50% { opacity: 0.3; transform: scale(1.1); }
       }
       .animate-pulse-reticle {
-        animation: pulse-reticle 1.5s ease-in-out infinite;
+        animation: pulse-reticle 2s ease-in-out infinite;
       }
 
       @keyframes scan {
@@ -101,7 +102,16 @@
         to { transform: rotate(360deg); }
       }
       .animate-spin-slow {
-        animation: spin-slow 8s linear infinite;
+        animation: spin-slow 12s linear infinite;
+      }
+      
+      /* Hide standard scrollbars for clean HUD look where needed */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
     <script type="importmap">
