@@ -38,11 +38,9 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
     setLoadingStage('Analyzing Market...');
     
     try {
-      // Stage 1: Market Analysis
       await new Promise(r => setTimeout(r, 800));
       setLoadingStage('Defining Business DNA...');
       
-      // Stage 2: Gemini API Call
       const result = await getBusinessDNA(businessName, businessType);
       
       setLoadingStage('Crafting Catalog...');
@@ -50,11 +48,11 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
       
       setDna(result);
       
-      // Fixed: Defensive check for starterProducts
-      const generatedProducts = (result.starterProducts ?? []).map((p, i) => ({ 
+      // FIX: Guard against undefined/null results and set stock to 10
+      const generatedProducts = (result?.starterProducts ?? []).map((p, i) => ({ 
         ...p, 
         id: `NEW-${Date.now()}-${i}`, 
-        stock: 20 
+        stock: 10 // Strictly set to 10 per request
       } as Product));
       
       setProducts(generatedProducts);
@@ -101,10 +99,12 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4 md:p-10 font-sans selection:bg-indigo-100 overflow-x-hidden">
-      <div className="w-full max-w-6xl flex flex-col items-center flex-1">
+      <div className="absolute inset-0 bg-grid-pattern opacity-[0.2] pointer-events-none" />
+      
+      <div className="w-full max-w-6xl flex flex-col items-center flex-1 relative z-10">
         <Logo className="h-12 mb-10" showText />
         
-        <div className="w-full max-w-5xl bg-white border border-slate-200 rounded-[2.5rem] shadow-xl relative overflow-hidden flex flex-col min-h-[560px] transition-all duration-500">
+        <div className="w-full max-w-5xl bg-white border border-slate-200 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col min-h-[560px] transition-all duration-500">
           
           {step === 0 && (
             <div className="p-8 md:p-16 flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -142,7 +142,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                 {isError && (
                   <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 animate-in slide-in-from-top-2">
                     <AlertCircle size={20} />
-                    <p className="text-xs font-bold">Generation anomaly detected. Please ensure your internet connection is stable and retry.</p>
+                    <p className="text-xs font-bold">Resilience triggered: The AI connection timed out. Please retry or check your network.</p>
                   </div>
                 )}
 
@@ -150,7 +150,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                   <button 
                     onClick={handleStart} 
                     disabled={!!loadingStage} 
-                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 px-12 rounded-2xl shadow-2xl shadow-indigo-200 transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-80"
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 px-12 rounded-2xl shadow-2xl shadow-indigo-200 transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-80 border-b-4 border-indigo-800"
                   >
                     {loadingStage ? (
                       <>
@@ -262,7 +262,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                 ))}
               </div>
               <div className="flex flex-col items-center gap-4">
-                <button onClick={() => setStep(3)} className="w-full sm:w-80 bg-slate-900 hover:bg-indigo-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-slate-200 transition-all active:scale-95 text-xs uppercase tracking-[0.3em]">
+                <button onClick={() => setStep(3)} className="w-full sm:w-80 bg-slate-900 hover:bg-indigo-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-slate-200 transition-all active:scale-95 text-xs uppercase tracking-[0.3em] border-b-4 border-slate-950">
                   Finalize Access
                 </button>
                 <button onClick={() => setStep(1)} className="text-[10px] font-black uppercase text-slate-400 tracking-widest hover:text-indigo-600">Back to Blueprint</button>
@@ -309,7 +309,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                     />
                   </div>
                </div>
-               <button onClick={finishSetup} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-2xl shadow-2xl shadow-indigo-100 transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-4 active:scale-95">
+               <button onClick={finishSetup} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-6 rounded-2xl shadow-2xl shadow-indigo-100 transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-4 active:scale-95 border-b-4 border-indigo-800">
                  Initialize Terminal <Zap size={20} fill="currentColor" className="text-amber-300"/>
                </button>
             </div>
@@ -341,7 +341,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
       </div>
       
       {/* Footer Branding */}
-      <div className="mt-12 text-center opacity-30">
+      <div className="mt-12 text-center opacity-30 relative z-10">
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.8em]">Autonomous Retail OS</p>
       </div>
     </div>

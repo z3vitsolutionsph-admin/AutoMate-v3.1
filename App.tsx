@@ -1,3 +1,4 @@
+
 import React, { Component, useState, useEffect, useCallback, ReactNode, ErrorInfo, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
@@ -19,7 +20,8 @@ import { supabase } from './services/supabaseClient';
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; errorInfo: ErrorInfo | null; showDetails: boolean; }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed ErrorBoundary by using React.Component with explicit Generic types to resolve Property 'state'/'props'/'setState' does not exist errors.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null, showDetails: false };
@@ -141,6 +143,7 @@ const App: React.FC = () => {
   );
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
 
+  // 1. Resolve Active Business ID
   useEffect(() => {
     if (isSetupComplete && businesses.length > 0 && !activeBusinessId) {
       const primary = businesses.find(b => b.isPrimary) || businesses[0];
@@ -148,11 +151,14 @@ const App: React.FC = () => {
     }
   }, [isSetupComplete, businesses, activeBusinessId]);
 
+  // 2. Load Data & Synchronize with Supabase Realtime
   useEffect(() => {
     if (isSetupComplete && activeBusinessId) {
-      const loadData = async () => {
+      const loadInitialData = async () => {
         try {
+          // Process any locally queued actions before fetching
           await dataService.syncPending();
+          
           const [fProd, fTrans, fSupp, fUsers, fRefs, fBiz] = await Promise.all([
             dataService.fetch<Product>('products', 'products', activeBusinessId),
             dataService.fetch<Transaction>('transactions', 'transactions', activeBusinessId),
@@ -161,6 +167,7 @@ const App: React.FC = () => {
             dataService.fetch<Referral>('referrals', 'referrals', activeBusinessId),
             dataService.fetch<Business>('businesses', 'businesses', activeBusinessId)
           ]);
+          
           setProducts(fProd); 
           setTransactions(fTrans); 
           setSuppliers(fSupp); 
@@ -175,33 +182,65 @@ const App: React.FC = () => {
             }
           }
         } catch (e) { 
-          console.warn("Running in Hybrid Offline Mode."); 
+          console.warn("[App] Running in Hybrid Offline Mode.", e); 
         }
       };
-      loadData();
+      
+      loadInitialData();
 
-      // Real-time Subscriptions
+      // ESTABLISH REAL-TIME SUBSCRIPTIONS
+      // This makes the app "Live" - changes in DB automatically apply here
       const channels = dataService.subscribeToChanges(
-        ['products', 'transactions', 'users'],
+        ['products', 'transactions', 'users', 'suppliers', 'referrals', 'businesses'],
         activeBusinessId,
         (change) => {
-          if (change.table === 'products') {
-            setProducts(prev => change.event === 'DELETE' 
-              ? prev.filter(p => p.id !== change.data.id) 
-              : [change.data, ...prev.filter(p => p.id !== change.data.id)]
-            );
-          } else if (change.table === 'transactions') {
-            setTransactions(prev => [change.data, ...prev.filter(t => t.id !== change.data.id)]);
+          const { table, event, data } = change;
+          
+          if (table === 'products') {
+            setProducts(prev => {
+              if (event === 'DELETE') return prev.filter(p => p.id !== data.id);
+              const exists = prev.some(p => p.id === data.id);
+              if (exists) return prev.map(p => p.id === data.id ? data : p);
+              return [data, ...prev];
+            });
+          } else if (table === 'transactions') {
+            setTransactions(prev => {
+              if (event === 'DELETE') return prev.filter(t => t.id !== data.id);
+              const exists = prev.some(t => t.id === data.id);
+              if (exists) return prev.map(t => t.id === data.id ? data : t);
+              return [data, ...prev];
+            });
+          } else if (table === 'users') {
+            setUsers(prev => {
+              if (event === 'DELETE') return prev.filter(u => u.id !== data.id);
+              return [data, ...prev.filter(u => u.id !== data.id)];
+            });
+          } else if (table === 'suppliers') {
+            setSuppliers(prev => {
+                if (event === 'DELETE') return prev.filter(s => s.id !== data.id);
+                return [data, ...prev.filter(s => s.id !== data.id)];
+            });
+          } else if (table === 'referrals') {
+            setReferrals(prev => {
+                if (event === 'DELETE') return prev.filter(r => r.id !== data.id);
+                return [data, ...prev.filter(r => r.id !== data.id)];
+            });
+          } else if (table === 'businesses') {
+            setBusinesses(prev => prev.map(b => b.id === data.id ? data : b));
+            if (data.id === activeBusinessId) setBusinessName(data.name);
           }
         }
       );
 
       return () => {
-        channels.forEach(c => supabase.removeChannel(c));
+        channels.forEach(c => {
+            if (c) supabase.removeChannel(c);
+        });
       };
     }
   }, [isSetupComplete, activeBusinessId]);
 
+  // 3. User Session Management
   useEffect(() => {
     const sid = localStorage.getItem(KEYS.SESSION_USER);
     if (sid && isSetupComplete && users.length > 0) {
@@ -217,7 +256,14 @@ const App: React.FC = () => {
 
   const handleOnboardingComplete = useCallback(async (data: OnboardingState) => {
     const bizId = `BIZ-${Date.now()}`;
-    const newBiz: Business = { id: bizId, name: data.businessName, type: data.businessType, address: 'Main Hub', isPrimary: true };
+    const newBiz: Business = { 
+        id: bizId, 
+        name: data.businessName, 
+        type: data.businessType, 
+        address: 'Main Hub', 
+        isPrimary: true 
+    };
+    
     const admin: SystemUser = { 
       id: `USR-${Date.now()}`, 
       businessId: bizId, 
@@ -229,25 +275,36 @@ const App: React.FC = () => {
       createdAt: new Date() 
     };
     
-    await dataService.upsert('businesses', 'businesses', newBiz);
-    await dataService.upsert('users', 'users', admin, bizId);
-    
-    // Safety guard: Ensure generatedProducts is not undefined before mapping
-    const productsToUpsert = (data.generatedProducts ?? []).map(p => ({ ...p, businessId: bizId }));
-    if (productsToUpsert.length > 0) {
-      await dataService.upsertMany('products', 'products', productsToUpsert);
+    try {
+      await dataService.upsert('businesses', 'businesses', newBiz);
+      await dataService.upsert('users', 'users', admin, bizId);
+      
+      const productsToUpsert = (data.generatedProducts ?? []).map(p => ({ 
+        ...p, 
+        businessId: bizId,
+        stock: 10 
+      }));
+      
+      if (productsToUpsert.length > 0) {
+        await dataService.upsertMany('products', 'products', productsToUpsert);
+      }
+      
+      setBusinessName(data.businessName); 
+      setBusinesses([newBiz]); 
+      setActiveBusinessId(bizId); 
+      setUsers([admin]); 
+      setProducts(productsToUpsert);
+      setSubscriptionPlan(data.selectedPlan); 
+      setIsSetupComplete(true); 
+      setCurrentUser(admin); 
+      
+      localStorage.setItem(KEYS.SESSION_USER, admin.id);
+      localStorage.setItem(KEYS.SETUP, 'true');
+      localStorage.setItem(KEYS.PLAN, data.selectedPlan);
+    } catch (err) {
+      console.error("[App] Critical Onboarding Failure:", err);
+      setIsSetupComplete(true); // Fallback to local mode
     }
-    
-    setBusinessName(data.businessName); 
-    setBusinesses([newBiz]); 
-    setActiveBusinessId(bizId); 
-    setUsers([admin]); 
-    setSubscriptionPlan(data.selectedPlan); 
-    setIsSetupComplete(true); 
-    setCurrentUser(admin); 
-    localStorage.setItem(KEYS.SESSION_USER, admin.id);
-    localStorage.setItem(KEYS.SETUP, 'true');
-    localStorage.setItem(KEYS.PLAN, data.selectedPlan);
   }, []);
 
   const handleLogin = useCallback(async (email: string, pass: string) => {
@@ -274,7 +331,12 @@ const App: React.FC = () => {
 
   const handleSaveProduct = async (p: Product) => { 
     const s = { ...p, businessId: activeBusinessId }; 
-    setProducts(prev => [s, ...prev.filter(x => x.id !== s.id)]); 
+    // State is updated automatically by subscription, but we update locally for snappiness
+    setProducts(prev => {
+        const exists = prev.some(x => x.id === s.id);
+        if (exists) return prev.map(x => x.id === s.id ? s : x);
+        return [s, ...prev];
+    }); 
     await dataService.upsert('products', 'products', s, activeBusinessId); 
   };
   
@@ -288,17 +350,17 @@ const App: React.FC = () => {
     setTransactions(prev => [...tagged, ...prev]); 
     await dataService.upsertMany('transactions', 'transactions', tagged); 
     
-    setProducts(prev => prev.map(p => {
-      const soldItem = tagged.find(t => t.productId === p.id);
-      if (soldItem) {
-        const newStock = Math.max(0, p.stock - (soldItem.quantity || 1));
-        const updated = { ...p, stock: newStock };
-        dataService.upsert('products', 'products', updated, activeBusinessId);
-        return updated;
-      }
-      return p;
-    }));
-  }, [activeBusinessId]);
+    // Deduct stock
+    for (const tx of tagged) {
+        if (tx.productId) {
+            const p = products.find(prod => prod.id === tx.productId);
+            if (p) {
+                const newStock = Math.max(0, p.stock - (tx.quantity || 1));
+                await dataService.upsert('products', 'products', { ...p, stock: newStock }, activeBusinessId);
+            }
+        }
+    }
+  }, [activeBusinessId, products]);
 
   if (showIntro) return <ErrorBoundary><IntroVideo onComplete={() => { sessionStorage.setItem(KEYS.INTRO_SEEN, 'true'); setShowIntro(false); }} /></ErrorBoundary>;
   if (!isSetupComplete) return <Onboarding onComplete={handleOnboardingComplete} onSwitchToLogin={() => setIsSetupComplete(true)} />;

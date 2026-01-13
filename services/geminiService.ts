@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 async function callWithRetry<T>(
@@ -28,6 +29,7 @@ async function callWithRetry<T>(
 
 export const getSupportResponse = async (userMessage: string, storeContext: string): Promise<string> => {
   if (!process.env.API_KEY) throw new Error("Assistant is offline.");
+  // Create a fresh instance for each request to ensure the latest API key is used
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const systemInstruction = `You are the AutoMate Shop Assistant. 
@@ -52,6 +54,7 @@ export const getSupportResponse = async (userMessage: string, storeContext: stri
       },
     });
     
+    // Using .text property directly as per latest SDK guidelines
     return response.text?.trim() || "I'm sorry, I couldn't process that request.";
   });
 };
@@ -165,16 +168,26 @@ export const getBusinessDNA = async (businessName: string, businessType: string)
       }
     });
 
-    const result = JSON.parse(response.text || "{}");
-    
-    // Ensure array integrity
-    return {
-      nicheAnalysis: result.nicheAnalysis || "Standard retail deployment.",
-      categories: result.categories || ["General", "Retail"],
-      starterProducts: result.starterProducts || [],
-      growthStrategy: result.growthStrategy || "Establish market presence through local engagement.",
-      brandIdentityPrompt: result.brandIdentityPrompt || "Professional and modern."
-    } as BusinessDNA;
+    try {
+      const result = JSON.parse(response.text || "{}");
+      // Resilient fallback structure
+      return {
+        nicheAnalysis: result.nicheAnalysis || "Standard retail deployment.",
+        categories: Array.isArray(result.categories) ? result.categories : ["General", "Retail"],
+        starterProducts: Array.isArray(result.starterProducts) ? result.starterProducts : [],
+        growthStrategy: result.growthStrategy || "Establish market presence through local engagement.",
+        brandIdentityPrompt: result.brandIdentityPrompt || "Professional and modern."
+      } as BusinessDNA;
+    } catch (e) {
+      console.warn("AI JSON Parse failed, returning empty DNA structure.");
+      return {
+        nicheAnalysis: "Deployment failed, using basic template.",
+        categories: ["General"],
+        starterProducts: [],
+        growthStrategy: "Standard operations.",
+        brandIdentityPrompt: "Minimalist"
+      };
+    }
   });
 };
 
@@ -187,6 +200,18 @@ export const performDeepAnalysis = async (products: any[], transactions: any[], 
       contents: `Business Audit for ${businessName}. Data: ${JSON.stringify({products, transactions})}`,
       config: { 
         responseMimeType: "application/json",
+        // Added responseSchema for better reliability and SDK compliance
+        // Schema Type used as correctly as Type.OBJECT must have properties.
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+            riskFactor: { type: Type.STRING },
+            opportunities: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["summary", "recommendations", "riskFactor", "opportunities"]
+        },
         thinkingConfig: { thinkingBudget: 4000 }
       }
     });
@@ -203,6 +228,7 @@ export const generateProductImage = async (description: string): Promise<string>
       contents: { parts: [{ text: `Professional product photography of ${description}, white background, high resolution.` }] },
       config: { imageConfig: { aspectRatio: "1:1" } },
     });
+    // Iterating through all parts to find the image data as required
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
@@ -217,8 +243,13 @@ export const searchProductImage = async (query: string): Promise<string> => {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-image-preview',
       contents: { parts: [{ text: `Search for a clean product image of ${query}` }] },
-      config: { imageConfig: { aspectRatio: "1:1" }, tools: [{ googleSearch: {} }] },
+      // Use google_search for gemini-3-pro-image-preview as per @google/genai guidelines for image models.
+      config: { 
+        imageConfig: { aspectRatio: "1:1" }, 
+        tools: [{ google_search: {} }] 
+      },
     });
+    // Iterating through all parts to find the image data
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
