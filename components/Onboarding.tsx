@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Check, ArrowRight, User, Loader2, Sparkles, Zap, BrainCircuit, Box, ChevronRight, AlertCircle, RefreshCcw } from 'lucide-react';
 import { OnboardingState, PlanType, SubscriptionPlan, Product } from '../types';
@@ -40,25 +39,28 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
     
     try {
       // Stage 1: Market Analysis
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 800));
       setLoadingStage('Defining Business DNA...');
       
       // Stage 2: Gemini API Call
       const result = await getBusinessDNA(businessName, businessType);
       
       setLoadingStage('Crafting Catalog...');
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 600));
       
       setDna(result);
-      setProducts(result.starterProducts.map((p, i) => ({ 
+      
+      // Fixed: Defensive check for starterProducts
+      const generatedProducts = (result.starterProducts ?? []).map((p, i) => ({ 
         ...p, 
         id: `NEW-${Date.now()}-${i}`, 
         stock: 20 
-      } as Product)));
+      } as Product));
       
+      setProducts(generatedProducts);
       setStep(1);
     } catch (e) { 
-      console.error("Onboarding logic failure:", e);
+      console.error("Onboarding Logic Error Captured:", e);
       setIsError(true);
       setLoadingStage('');
     }
@@ -75,19 +77,19 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
     }
     
     setStep(4);
-    addLog("Setting up your shop's digital shelf...");
+    addLog("Configuring digital infrastructure...");
     await new Promise(r => setTimeout(r, 600));
-    addLog(`Registering ${businessName} in our secure vault...`);
+    addLog(`Registering ${businessName} within the neural registry...`);
     await new Promise(r => setTimeout(r, 800));
-    addLog(`Creating manager access for ${admin.name}...`);
+    addLog(`Creating administrative credentials for ${admin.name}...`);
     await new Promise(r => setTimeout(r, 1000));
-    addLog("Almost ready! Just polishing the counter...");
+    addLog("Ready for deployment. Waking terminal...");
     
     setTimeout(() => onComplete({ 
       businessName, 
       businessType, 
-      generatedCategories: dna?.categories || [], 
-      generatedProducts: products, 
+      generatedCategories: dna?.categories ?? [], 
+      generatedProducts: products ?? [], 
       selectedPlan, 
       paymentMethod: 'GCASH', 
       adminName: admin.name, 
@@ -140,7 +142,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                 {isError && (
                   <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 animate-in slide-in-from-top-2">
                     <AlertCircle size={20} />
-                    <p className="text-xs font-bold">Something went wrong. Please check your internet node and try again.</p>
+                    <p className="text-xs font-bold">Generation anomaly detected. Please ensure your internet connection is stable and retry.</p>
                   </div>
                 )}
 
@@ -157,13 +159,13 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                       </>
                     ) : (
                       <>
-                        <span className="uppercase tracking-widest text-xs font-black">Start My Shop</span>
+                        <span className="uppercase tracking-widest text-xs font-black">Generate Shop DNA</span>
                         <Sparkles size={18}/>
                       </>
                     )}
                   </button>
                   <button onClick={onSwitchToLogin} className="text-slate-400 font-bold text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors p-2 flex items-center gap-2">
-                    Already have an account? <ChevronRight size={14} />
+                    Login to existing node <ChevronRight size={14} />
                   </button>
                 </div>
               </div>
@@ -200,10 +202,10 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                 <div className="lg:col-span-8 bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden flex flex-col shadow-sm">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Generated Starter Catalog</h3>
-                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">{products.length} Items</span>
+                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">{products?.length ?? 0} Items</span>
                   </div>
                   <div className="flex-1 p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {products.map((p, i) => (
+                    {(products ?? []).length > 0 ? (products ?? []).map((p, i) => (
                       <div key={i} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col gap-3 group transition-all hover:border-indigo-300 hover:bg-white hover:shadow-lg">
                         <div className="aspect-square bg-white rounded-xl flex items-center justify-center text-slate-200 border border-slate-100 shadow-inner group-hover:text-indigo-400 transition-colors">
                           <Box size={24} />
@@ -216,7 +218,9 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="col-span-full py-10 text-center opacity-40 italic text-sm">No initial products generated.</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -244,7 +248,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
                       <p className="text-4xl font-black text-slate-900 tracking-tighter">₱{p.price.toLocaleString()}<span className="text-xs text-slate-400 font-bold ml-1 tracking-normal">/mo</span></p>
                     </div>
                     <ul className="space-y-4 flex-1 mb-10">
-                      {p.features.map((f, i) => (
+                      {(p.features ?? []).map((f, i) => (
                         <li key={i} className="flex items-start gap-3 text-[11px] font-bold text-slate-600 leading-tight">
                           <div className="mt-0.5 p-0.5 bg-indigo-500 rounded text-white shadow-sm"><Check size={10} strokeWidth={4}/></div>
                           {f}
@@ -338,7 +342,7 @@ export const Onboarding: React.FC<{ onComplete: (data: OnboardingState) => void;
       
       {/* Footer Branding */}
       <div className="mt-12 text-center opacity-30">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.8em]">End-to-End Intelligence</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.8em]">Autonomous Retail OS</p>
       </div>
     </div>
   );

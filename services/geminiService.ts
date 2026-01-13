@@ -38,7 +38,7 @@ export const getSupportResponse = async (userMessage: string, storeContext: stri
   
   RULES:
   1. Friendly, concise, professional business advice.
-  2. Use bullet points.
+  2. Use bullet points for steps.
   3. If stock is low, recommend reordering.`;
 
   return callWithRetry(async () => {
@@ -129,14 +129,52 @@ export interface BusinessDNA {
 export const getBusinessDNA = async (businessName: string, businessType: string): Promise<BusinessDNA> => {
   if (!process.env.API_KEY) throw new Error("API Key Missing");
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const systemPrompt = `Create a business blueprint for "${businessName}" (${businessType}).`;
+  const systemPrompt = `Create a business blueprint for "${businessName}" (${businessType}). 
+  You MUST return valid JSON. Ensure starterProducts is an array of at least 3-5 items.`;
+  
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: systemPrompt,
-      config: { responseMimeType: "application/json" }
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            nicheAnalysis: { type: Type.STRING },
+            categories: { type: Type.ARRAY, items: { type: Type.STRING } },
+            starterProducts: { 
+              type: Type.ARRAY, 
+              items: { 
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  price: { type: Type.NUMBER },
+                  description: { type: Type.STRING },
+                  sku: { type: Type.STRING }
+                },
+                required: ["name", "category", "price", "sku"]
+              } 
+            },
+            growthStrategy: { type: Type.STRING },
+            brandIdentityPrompt: { type: Type.STRING }
+          },
+          required: ["nicheAnalysis", "categories", "starterProducts", "growthStrategy"]
+        }
+      }
     });
-    return JSON.parse(response.text || "{}") as BusinessDNA;
+
+    const result = JSON.parse(response.text || "{}");
+    
+    // Ensure array integrity
+    return {
+      nicheAnalysis: result.nicheAnalysis || "Standard retail deployment.",
+      categories: result.categories || ["General", "Retail"],
+      starterProducts: result.starterProducts || [],
+      growthStrategy: result.growthStrategy || "Establish market presence through local engagement.",
+      brandIdentityPrompt: result.brandIdentityPrompt || "Professional and modern."
+    } as BusinessDNA;
   });
 };
 
@@ -146,7 +184,7 @@ export const performDeepAnalysis = async (products: any[], transactions: any[], 
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `Business Audit Request for ${businessName}. Data: ${JSON.stringify({products, transactions})}`,
+      contents: `Business Audit for ${businessName}. Data: ${JSON.stringify({products, transactions})}`,
       config: { 
         responseMimeType: "application/json",
         thinkingConfig: { thinkingBudget: 4000 }
@@ -156,19 +194,19 @@ export const performDeepAnalysis = async (products: any[], transactions: any[], 
   });
 };
 
-export const generateBusinessHeroImage = async (prompt: string): Promise<string> => {
+export const generateProductImage = async (description: string): Promise<string> => {
   if (!process.env.API_KEY) throw new Error("API Key Missing");
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
-      config: { imageConfig: { aspectRatio: "16:9" } },
+      contents: { parts: [{ text: `Professional product photography of ${description}, white background, high resolution.` }] },
+      config: { imageConfig: { aspectRatio: "1:1" } },
     });
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
-    throw new Error("Image generation failed.");
+    throw new Error("Image creation failed.");
   });
 };
 
@@ -178,28 +216,12 @@ export const searchProductImage = async (query: string): Promise<string> => {
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-image-preview',
-      contents: { parts: [{ text: query }] },
+      contents: { parts: [{ text: `Search for a clean product image of ${query}` }] },
       config: { imageConfig: { aspectRatio: "1:1" }, tools: [{ googleSearch: {} }] },
     });
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
     throw new Error("Product search failed.");
-  });
-};
-
-export const generateProductImage = async (description: string): Promise<string> => {
-  if (!process.env.API_KEY) throw new Error("API Key Missing");
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  return callWithRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: description }] },
-      config: { imageConfig: { aspectRatio: "1:1" } },
-    });
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    }
-    throw new Error("Image creation failed.");
   });
 };

@@ -1,5 +1,4 @@
-
-import React, { Component, useState, useEffect, useCallback, ReactNode, ErrorInfo } from 'react';
+import React, { Component, useState, useEffect, useCallback, ReactNode, ErrorInfo, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
 import { Login } from './components/Login';
@@ -13,13 +12,13 @@ import { Support } from './components/Support';
 import { Settings } from './components/Settings';
 import { IntroVideo } from './components/IntroVideo';
 import { ViewState, UserRole, OnboardingState, Product, Transaction, Supplier, IntegrationConfig, SyncLog, SystemUser, PlanType, Business, Referral } from './types';
-import { RefreshCw, ShieldX, Zap } from 'lucide-react';
+import { RefreshCw, ShieldX, Zap, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { dataService } from './services/dataService';
+import { supabase } from './services/supabaseClient';
 
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; errorInfo: ErrorInfo | null; showDetails: boolean; }
 
-// Fixed: Inherit from Component and initialize state in constructor to satisfy TS typing.
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -31,54 +30,70 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Fixed: Correctly use inherited setState method.
     this.setState({ errorInfo });
     console.error("Critical System Glitch:", error, errorInfo);
   }
 
-  handleSelfHeal = () => {
+  handleSoftReboot = () => {
     sessionStorage.clear();
     window.location.reload();
+  };
+
+  handleHardRecovery = () => {
+    if (window.confirm("Perform Hard Recovery? This will reset your terminal view but your local sales data (IndexedDB) will remain safe.")) {
+      const keysToClear = ['automate_v3_setup', 'automate_v3_session_user_id'];
+      keysToClear.forEach(k => localStorage.removeItem(k));
+      sessionStorage.clear();
+      window.location.reload();
+    }
   };
 
   render(): ReactNode {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
-          <div className="w-full max-w-xl bg-white border border-slate-200 rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+          <div className="absolute inset-0 bg-grid-pattern opacity-[0.2] pointer-events-none" />
+          <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500 relative z-10">
              <div className="p-12 text-center space-y-8">
                 <div className="w-24 h-24 bg-rose-50 rounded-[2.5rem] flex items-center justify-center text-rose-500 mx-auto shadow-xl border border-rose-100">
-                  <ShieldX size={48} strokeWidth={2.5}/>
+                  <AlertTriangle size={48} strokeWidth={2.5}/>
                 </div>
                 <div className="space-y-3">
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-tight">System Interrupted</h2>
-                  <p className="text-slate-500 font-medium leading-relaxed">
-                    AutoMate encountered an unexpected state. Your shop records are protected and saved locally. A quick restart will restore the terminal.
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-tight">Terminal Node Interrupted</h2>
+                  <p className="text-slate-500 font-medium leading-relaxed max-w-md mx-auto">
+                    AutoMate encountered a logic anomaly. Your shop records are protected via **Neural Resilience™**. Use the healing tools below to restore the node.
                   </p>
                 </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <button onClick={this.handleSelfHeal} className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 uppercase text-[10px] tracking-widest active:scale-95">
-                    <RefreshCw size={18}/> Reboot System Node
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button onClick={this.handleSoftReboot} className="group py-5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-3xl shadow-xl shadow-indigo-100 transition-all flex flex-col items-center justify-center gap-1 uppercase active:scale-95 border-b-4 border-indigo-800">
+                    <div className="flex items-center gap-2"><RefreshCw size={18} className="group-hover:rotate-180 transition-transform duration-500"/> <span className="text-[10px] tracking-widest">Soft Reboot</span></div>
+                    <span className="text-[7px] opacity-60">Restart Session</span>
                   </button>
-                  <button onClick={() => this.setState({showDetails: !this.state.showDetails})} className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em] hover:text-indigo-600 transition-all py-2">
-                    {this.state.showDetails ? 'Hide' : 'Show'} Diagnostic Data
+                  <button onClick={this.handleHardRecovery} className="group py-5 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-3xl shadow-xl transition-all flex flex-col items-center justify-center gap-1 uppercase active:scale-95 border-b-4 border-slate-950">
+                    <div className="flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-400"/> <span className="text-[10px] tracking-widest">Hard Recovery</span></div>
+                    <span className="text-[7px] opacity-60">Reset System Node</span>
                   </button>
                 </div>
+
+                <button onClick={() => this.setState({showDetails: !this.state.showDetails})} className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em] hover:text-indigo-600 transition-all py-2">
+                  {this.state.showDetails ? 'Hide' : 'Show'} Diagnostic Core Data
+                </button>
+
                 {this.state.showDetails && (
-                  <div className="p-6 bg-slate-50 rounded-2xl text-left border border-slate-200 overflow-auto max-h-32 shadow-inner">
-                    <pre className="text-[9px] font-mono text-slate-400">{this.state.error?.message}</pre>
+                  <div className="p-6 bg-slate-50 rounded-2xl text-left border border-slate-200 overflow-auto max-h-40 shadow-inner">
+                    <pre className="text-[9px] font-mono text-rose-400/80">{this.state.error?.stack}</pre>
                   </div>
                 )}
              </div>
              <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-3">
                <Zap size={14} className="text-indigo-400" />
-               <span className="text-[8px] font-black uppercase text-slate-400 tracking-[0.4em]">Recovery Protocol v3.6.1</span>
+               <span className="text-[8px] font-black uppercase text-slate-400 tracking-[0.4em]">Resilience Layer v3.7.1 - Active Protection</span>
              </div>
           </div>
         </div>
       );
     }
-    // Fixed: props.children is accessed via this.props.
     return this.props.children;
   }
 }
@@ -164,6 +179,26 @@ const App: React.FC = () => {
         }
       };
       loadData();
+
+      // Real-time Subscriptions
+      const channels = dataService.subscribeToChanges(
+        ['products', 'transactions', 'users'],
+        activeBusinessId,
+        (change) => {
+          if (change.table === 'products') {
+            setProducts(prev => change.event === 'DELETE' 
+              ? prev.filter(p => p.id !== change.data.id) 
+              : [change.data, ...prev.filter(p => p.id !== change.data.id)]
+            );
+          } else if (change.table === 'transactions') {
+            setTransactions(prev => [change.data, ...prev.filter(t => t.id !== change.data.id)]);
+          }
+        }
+      );
+
+      return () => {
+        channels.forEach(c => supabase.removeChannel(c));
+      };
     }
   }, [isSetupComplete, activeBusinessId]);
 
@@ -196,7 +231,12 @@ const App: React.FC = () => {
     
     await dataService.upsert('businesses', 'businesses', newBiz);
     await dataService.upsert('users', 'users', admin, bizId);
-    if (data.generatedProducts) await dataService.upsertMany('products', 'products', data.generatedProducts.map(p => ({...p, businessId: bizId})));
+    
+    // Safety guard: Ensure generatedProducts is not undefined before mapping
+    const productsToUpsert = (data.generatedProducts ?? []).map(p => ({ ...p, businessId: bizId }));
+    if (productsToUpsert.length > 0) {
+      await dataService.upsertMany('products', 'products', productsToUpsert);
+    }
     
     setBusinessName(data.businessName); 
     setBusinesses([newBiz]); 

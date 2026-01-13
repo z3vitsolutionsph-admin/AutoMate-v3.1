@@ -1,117 +1,56 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AutoMateSystem - Your Business Buddy</title>
+    <title>AutoMateSystem - AI Shop Companion</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --brand-indigo: #6366f1;
+      }
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #f8fafc; /* slate-50 */
-        color: #0f172a; /* slate-900 */
+        background-color: #f8fafc;
+        color: #0f172a;
+        -webkit-font-smoothing: antialiased;
       }
       
-      /* Modern UI Utilities */
       .glass-panel {
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-      }
-      
-      .surface-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(226, 232, 240, 0.5);
       }
 
-      /* Custom Scrollbar - Light Mode */
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f5f9; 
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #cbd5e1; 
+        background: #cbd5e1;
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8; 
+        background: #94a3b8;
       }
 
-      /* Transitions */
-      .page-transition {
-        animation: fadeIn 0.4s ease-out;
-      }
-
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      
       .bg-grid-pattern {
-        background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px),
-                          linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
-        background-size: 40px 40px;
+        background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
+        background-size: 32px 32px;
       }
 
-      /* Keyframes for new UI features */
-      @keyframes wiggle {
-        0%, 100% { transform: rotate(-3deg); }
-        50% { transform: rotate(3deg); }
+      @keyframes slideInUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
       }
-      .animate-wiggle {
-        animation: wiggle 0.5s ease-in-out infinite;
-      }
-
-      @keyframes pulse-subtle {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.02); opacity: 0.8; }
-      }
-      .animate-pulse-subtle {
-        animation: pulse-subtle 3s ease-in-out infinite;
-      }
-
-      @keyframes pulse-reticle {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.3; transform: scale(1.1); }
-      }
-      .animate-pulse-reticle {
-        animation: pulse-reticle 2s ease-in-out infinite;
-      }
-
-      @keyframes scan {
-        0% { transform: translateY(-100%); opacity: 0; }
-        50% { opacity: 1; }
-        100% { transform: translateY(100%); opacity: 0; }
-      }
-      .animate-scan {
-        animation: scan 2s linear infinite;
-      }
-
-      @keyframes spin-slow {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      .animate-spin-slow {
-        animation: spin-slow 12s linear infinite;
-      }
-      
-      /* Hide standard scrollbars for clean HUD look where needed */
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
+      .animate-slide-up {
+        animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
       }
     </style>
     <script type="importmap">
@@ -123,9 +62,6 @@
         "recharts": "https://esm.sh/recharts@^3.6.0",
         "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
         "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-        "@zxing/browser": "https://esm.sh/@zxing/browser@0.1.1",
-        "jsbarcode": "https://esm.sh/jsbarcode@3.11.6",
-        "jspdf": "https://esm.sh/jspdf@2.5.1",
         "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.3"
       }
     }
