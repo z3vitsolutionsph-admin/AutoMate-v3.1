@@ -12,8 +12,10 @@ export enum ViewState {
 
 export enum UserRole {
   ADMIN = 'Admin',
+  ADMIN_PRO = 'AdminPro',
   CASHIER = 'Cashier',
   PROMOTER = 'Promoter',
+  EMPLOYEE = 'Employee',
 }
 
 export interface Product {
@@ -96,4 +98,36 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: Date;
+}
+
+export interface IntegrationConfig {
+  id: string;
+  provider: 'QUICKBOOKS' | 'XERO' | 'GITHUB';
+  name: string;
+  status: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING';
+  autoSync: boolean;
+  lastSync?: Date;
+}
+
+export interface SyncLog {
+  id: string;
+  provider: string;
+  action: string;
+  status: 'SUCCESS' | 'FAILURE';
+  timestamp: Date;
+  details: string;
+}
+
+export interface OnboardingState {
+  currentStep: number;
+  isComplete: boolean;
+  selectedPlan: string;
+  businessName: string;
+  businessType: string;
+  generatedCategories: string[];
+  gates: {
+    employeeSet: boolean;
+    categorySet: boolean;
+    inventorySet: boolean;
+  };
 }

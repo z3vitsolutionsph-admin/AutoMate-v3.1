@@ -1,8 +1,11 @@
 
+/// <reference types="vite/client" />
 import { GoogleGenAI, Type, Schema } from "@google/genai";
+import type { Transaction, Product, ReorderSuggestion } from "../types";
 
 // Initialize the API client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
 // --- Helper: Robust Retry Logic ---
 async function callWithRetry<T>(
@@ -119,8 +122,8 @@ export const generateBusinessCategories = async (businessName: string, businessT
 /**
  * Generates sales forecast and business insights based on transaction history.
  */
-export const generateSalesForecast = async (transactions: any[]): Promise<{ forecast: {date: string, sales: number}[], insights: string[] }> => {
-  if (!process.env.API_KEY || transactions.length < 5) {
+export const generateSalesForecast = async (transactions: Transaction[]): Promise<{ forecast: {date: string, sales: number}[], insights: string[] }> => {
+  if (!apiKey || transactions.length < 5) {
      const today = new Date();
      const mockForecast = Array.from({length: 7}, (_, i) => {
          const d = new Date(today);
@@ -142,10 +145,10 @@ export const generateSalesForecast = async (transactions: any[]): Promise<{ fore
 
   return callWithRetry(async () => {
       // Data Pre-processing
-      const salesMap = transactions.reduce((acc: any, t: any) => {
+      const salesMap = transactions.reduce((acc: Record<string, number>, t: Transaction) => {
           if(t.status === 'Completed') {
-              const date = t.date.split('T')[0];
-              acc[date] = (acc[date] || 0) + t.amount;
+              const date = t.created_at.split('T')[0];
+              acc[date] = (acc[date] || 0) + t.total_amount;
           }
           return acc;
       }, {});
@@ -202,26 +205,26 @@ export const getSupportResponse = async (userMessage: string): Promise<string> =
  * Analyzes stock levels against recent transaction history to suggest reorders.
  */
 export const analyzeStockLevels = async (
-  products: any[], 
-  transactions: any[]
-): Promise<any[]> => {
-  if (!process.env.API_KEY) return [];
+  products: Product[], 
+  transactions: Transaction[]
+): Promise<ReorderSuggestion[]> => {
+  if (!apiKey) return [];
 
   return callWithRetry(async () => {
     // 1. Calculate Sales Velocity (Total Quantity Sold per Product in history)
     const salesVelocity: Record<string, number> = {};
     transactions.forEach(t => {
       if (t.status === 'Completed') {
-        salesVelocity[t.product] = (salesVelocity[t.product] || 0) + (t.quantity || 1);
+        salesVelocity[t.product_id] = (salesVelocity[t.product_id] || 0) + t.quantity;
       }
     });
 
     // 2. Prepare concise data payload for AI
     const inventorySummary = products.map(p => ({
       name: p.name,
-      category: p.category,
+      category: p.category_id || 'Uncategorized',
       currentStock: p.stock,
-      totalSoldRecently: salesVelocity[p.name] || 0
+      totalSoldRecently: salesVelocity[p.id] || 0
     }));
 
     const prompt = `

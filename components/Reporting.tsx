@@ -28,7 +28,7 @@ export const Reporting: React.FC<ReportingProps> = ({ transactions, products }) 
       
       if (timeRange === 'all') return true;
 
-      const txDate = new Date(t.date);
+      const txDate = new Date(t.created_at);
       const diffTime = now.getTime() - txDate.getTime();
       const diffDays = diffTime / (1000 * 3600 * 24);
 
@@ -59,14 +59,14 @@ export const Reporting: React.FC<ReportingProps> = ({ transactions, products }) 
 
     // Sum amounts
     filteredTransactions.forEach(t => {
-       const dateKey = t.date.split('T')[0];
+       const dateKey = t.created_at.split('T')[0];
        // If 'all', we might encounter dates not initialized, so we add them
        if (grouped[dateKey] === undefined && timeRange === 'all') {
            grouped[dateKey] = 0;
        }
        
        if (grouped[dateKey] !== undefined) {
-           grouped[dateKey] += t.amount;
+           grouped[dateKey] += t.total_amount;
        }
     });
 
@@ -84,27 +84,34 @@ export const Reporting: React.FC<ReportingProps> = ({ transactions, products }) 
   const categoryData = useMemo(() => {
     const grouped: Record<string, number> = {};
     filteredTransactions.forEach(t => {
-       grouped[t.category] = (grouped[t.category] || 0) + t.amount;
+      const product = products.find(p => p.id === t.product_id);
+      if (product) {
+        const category = product.category_id || 'Uncategorized';
+        grouped[category] = (grouped[category] || 0) + t.total_amount;
+      }
     });
     return Object.entries(grouped)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, products]);
 
   // 3. Top Products by Quantity
   const topProductsData = useMemo(() => {
     const grouped: Record<string, number> = {};
     filteredTransactions.forEach(t => {
-       grouped[t.product] = (grouped[t.product] || 0) + (t.quantity || 1);
+      const product = products.find(p => p.id === t.product_id);
+      if (product) {
+        grouped[product.name] = (grouped[product.name] || 0) + t.quantity;
+      }
     });
     return Object.entries(grouped)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, products]);
 
   // Metrics Calculation
-  const totalRevenue = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalRevenue = filteredTransactions.reduce((sum, t) => sum + t.total_amount, 0);
   const totalOrders = filteredTransactions.length;
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
   

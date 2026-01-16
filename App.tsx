@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Session } from '@supabase/supabase-js';
 import { Layout } from './components/Layout';
 import { Onboarding } from './components/Onboarding';
 import { Login } from './components/Login';
@@ -22,7 +23,7 @@ const App: React.FC = () => {
   
   // System State
   const [isSetupComplete, setIsSetupComplete] = useState<boolean>(true); // Assuming setup is complete for now
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -36,6 +37,11 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loyaltyPoints, setLoyaltyPoints] = useState<LoyaltyPoint[]>([]);
+
+  // --- Helper: Validate UserRole ---
+  const isValidUserRole = (value: unknown): value is UserRole => {
+    return Object.values(UserRole).includes(value as UserRole);
+  };
 
   // --- Effects ---
 
@@ -51,10 +57,17 @@ const App: React.FC = () => {
             .eq('id', session.user.id)
             .single();
 
-          if (data && 'name' in data.role) {
-            setUserRole(data.role.name as UserRole);
+          if (data && data.role && typeof data.role === 'object' && 'name' in data.role) {
+            const roleName = data.role.name;
+            if (isValidUserRole(roleName)) {
+              setUserRole(roleName);
+            } else {
+              console.error('Invalid user role:', roleName);
+              setUserRole(null);
+            }
           } else {
             console.error('Error fetching user role:', error);
+            setUserRole(null);
           }
         };
         fetchUserRole();
@@ -64,7 +77,7 @@ const App: React.FC = () => {
     });
 
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
@@ -104,32 +117,11 @@ const App: React.FC = () => {
           setLoading(false);
         }
       };
-
       fetchData();
     }
   }, [session, userRole]);
 
   // --- Handlers ---
-
-  // const handleOnboardingComplete = useCallback((data: OnboardingState) => {
-  //   setBusinessName(data.businessName);
-  //   setCategories(data.generatedCategories);
-
-  //   // Generate specific starter products based on business type
-  //   const starterProducts: Product[] = data.generatedCategories.slice(0, 3).map((cat, idx) => ({
-  //     id: `INIT-${idx + 100}`,
-  //     name: `Starter ${cat} Item`,
-  //     sku: `START-00${idx + 1}`,
-  //     category: cat,
-  //     price: (idx + 1) * 500,
-  //     stock: 20 * (idx + 1),
-  //     description: 'Automatically generated starter item.',
-  //     supplier: 'Initial Setup'
-  //   }));
-
-  //   setProducts(prev => [...starterProducts, ...prev]);
-  //   setIsSetupComplete(true);
-  // }, []);
 
   const handleAddCustomer = async (customer: Omit<Customer, 'id' | 'created_at'>) => {
     const newCustomer = await addCustomer(customer);
@@ -221,17 +213,12 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. Onboarding Flow
-  // if (!isSetupComplete) {
-  //   return <Onboarding onComplete={handleOnboardingComplete} />;
-  // }
-
-  // 2. Authentication Flow
+  // Authentication Flow
   if (!session) {
     return <Login businessName={businessName} />;
   }
 
-  // 3. Main Application Flow
+  // Main Application Flow
   if (loading || !userRole) {
     return <RoleShell role={userRole!} loading={true} />;
   }

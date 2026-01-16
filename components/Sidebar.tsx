@@ -18,11 +18,17 @@ const ROLE_PERMISSIONS: Record<UserRole, ViewState[]> = {
   [UserRole.ADMIN]: [
     ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.CUSTOMERS, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
   ],
+  [UserRole.ADMIN_PRO]: [
+    ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.CUSTOMERS, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
   [UserRole.CASHIER]: [
     ViewState.POS
   ],
   [UserRole.PROMOTER]: [
     ViewState.DASHBOARD, ViewState.INVENTORY, ViewState.POS, ViewState.REPORTING, ViewState.CUSTOMERS, ViewState.PROMOTER, ViewState.SUPPORT, ViewState.SETTINGS
+  ],
+  [UserRole.EMPLOYEE]: [
+    ViewState.POS, ViewState.DASHBOARD, ViewState.CUSTOMERS
   ]
 };
 

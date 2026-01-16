@@ -214,12 +214,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   };
 
   const handleBulkDelete = async () => {
-    if (window.confirm(`Are you sure you want to delete ${selectedIds.size} selected products? This action cannot be undone.`)) {
+    const deleteCount: string = String(selectedIds.size);
+    if (window.confirm(`Are you sure you want to delete ${deleteCount} selected products? This action cannot be undone.`)) {
       try {
-        await Promise.all(Array.from(selectedIds).map(id => deleteProduct(id)));
+        const idsToDelete: string[] = Array.from(selectedIds);
+        await Promise.all(idsToDelete.map(id => deleteProduct(id)));
         setProducts(prev => prev.filter(p => !selectedIds.has(p.id)));
         setSelectedIds(new Set());
-        setScanSuccess(`${selectedIds.size} products deleted successfully.`);
+        setScanSuccess(`${deleteCount} products deleted successfully.`);
       } catch (error) {
         setGeneralError('Failed to delete products. Please try again.');
       }
@@ -466,7 +468,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, cat
   const openEditSupplier = (s: Supplier) => {
     setEditingSupplier(s);
     setSupName(s.name);
-    setSupContact(s.contactPerson);
+    setSupContact(s.contact_person);
     setSupEmail(s.email);
     setSupPhone(s.phone);
     setSupAddress(s.address);
